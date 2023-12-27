@@ -37,6 +37,7 @@ class _VectorWriter:
         self.idx += bits
 
 
+
 class Action(Enum):
     NOOP = 0
     FORWARD = 1
