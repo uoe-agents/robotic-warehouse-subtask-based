@@ -98,6 +98,8 @@ class Agent(Entity):
         self.carrying_shelf: Optional[Shelf] = None
         self.canceled_action = None
         self.has_delivered = False
+        self.can_load = True
+        self.can_carry = True
 
     @property
     def collision_layers(self):
@@ -790,7 +792,7 @@ class Warehouse(gym.Env):
                     agent.carrying_shelf.x, agent.carrying_shelf.y = agent.x, agent.y
             elif agent.req_action in [Action.LEFT, Action.RIGHT]:
                 agent.dir = agent.req_direction()
-            elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf:
+            elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                 if shelf_id:
                     agent.carrying_shelf = self.shelfs[shelf_id - 1]
