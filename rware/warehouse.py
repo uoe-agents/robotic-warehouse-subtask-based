@@ -737,18 +737,8 @@ class Warehouse(gym.Env):
         # for s in self.shelfs:
         #     self.grid[0, s.y, s.x] = 1
         # print(self.grid[0])
-
-    def step(
-        self, actions: List[Action]
-    ) -> Tuple[List[np.ndarray], List[float], List[bool], Dict]:
-        assert len(actions) == len(self.agents)
-
-        for agent, action in zip(self.agents, actions):
-            if self.msg_bits > 0:
-                agent.req_action = Action(action[0])
-                agent.message[:] = action[1:]
-            else:
-                agent.req_action = Action(action)
+    
+    def resolve_move_conflict(self, agent_list):
 
         # # stationary agents will certainly stay where they are
         # stationary_agents = [agent for agent in self.agents if agent.action != Action.FORWARD]
@@ -759,7 +749,7 @@ class Warehouse(gym.Env):
 
         G = nx.DiGraph()
 
-        for agent in self.agents:
+        for agent in agent_list:
             start = agent.x, agent.y
             target = agent.req_location(self.grid_size)
 
@@ -812,6 +802,22 @@ class Warehouse(gym.Env):
         for agent in failed_agents:
             assert agent.req_action == Action.FORWARD
             agent.req_action = Action.NOOP
+
+
+    def step(
+        self, actions: List[Action]
+    ) -> Tuple[List[np.ndarray], List[float], List[bool], Dict]:
+        assert len(actions) == len(self.agents)
+
+        for agent, action in zip(self.agents, actions):
+            if self.msg_bits > 0:
+                agent.req_action = Action(action[0])
+                agent.message[:] = action[1:]
+            else:
+                agent.req_action = Action(action)
+
+        carry_agents = [ agent for agent in self.agents if agent.can_carry ]
+        self.resolve_move_conflict(carry_agents)
 
         rewards = np.zeros(self.n_agents)
 
