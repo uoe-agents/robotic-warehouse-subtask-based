@@ -156,13 +156,13 @@ class Warehouse(gym.Env):
         column_height: int,
         shelf_rows: int,
         n_agents: int,
-        agent_type: str,
         msg_bits: int,
         sensor_range: int,
         request_queue_size: int,
         max_inactivity_steps: Optional[int],
         max_steps: Optional[int],
         reward_type: RewardType,
+        agent_type: str = 'cl',
         layout: str = None,
         observation_type: ObserationType=ObserationType.FLATTENED,
         image_observation_layers: List[ImageLayer]=[
@@ -247,8 +247,8 @@ class Warehouse(gym.Env):
             self._make_layout_from_str(layout)
 
         self.n_agents = n_agents
-        if isinstance(agent_type, Iterable) and agent_type is not str:
-            assert len(agent_type) == self.n_agents, "agent_type must be a scalar or a list of length n_agents"
+        if isinstance(agent_type, Iterable) and not isinstance(agent_type, str):
+            assert len(agent_type) == self.n_agents, "agent_type must be a scalar or a list (found {0}) of length n_agents (is {1}) ".format( len(agent_type) , self.n_agents)
             for type_ in agent_type:
                 assert type_ in ('c', 'l', 'cl'), "invalid input: agent_type must be either c (carrying), l (loading) or cl (carrying or loading) but recived {0}".format(type_)
             self.agent_type = agent_type
