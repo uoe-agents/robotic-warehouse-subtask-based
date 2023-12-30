@@ -400,9 +400,18 @@ class Warehouse(gym.Env):
                     dtype=np.float32,
             )
         else:
-            location_space = spaces.MultiDiscrete(
-                [self.grid_size[1], self.grid_size[0]]
+            location_space = spaces.Dict(
+                OrderedDict(
+                    {
+                        "x": spaces.Discrete(1),
+                        "y": spaces.Discrete(1),
+                    }
+                )
+
             )
+            # location_space = spaces.MultiDiscrete(
+            #     [self.grid_size[1], self.grid_size[0]]
+            # )
 
         self.observation_space = spaces.Tuple(
             tuple(
@@ -414,7 +423,7 @@ class Warehouse(gym.Env):
                                     OrderedDict(
                                         {
                                             "location": location_space,
-                                            "carrying_shelf": spaces.MultiDiscrete([2]),
+                                            "carrying_shelf": spaces.MultiBinary(1),
                                             "direction": spaces.Discrete(4),
                                             "on_highway": spaces.MultiBinary(1),
                                         }
