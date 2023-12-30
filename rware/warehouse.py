@@ -9,7 +9,7 @@ from rware.utils import MultiAgentActionSpace, MultiAgentObservationSpace
 from enum import Enum
 import numpy as np
 
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Iterable
 
 import networkx as nx
 
@@ -98,8 +98,8 @@ class Agent(Entity):
         self.carrying_shelf: Optional[Shelf] = None
         self.canceled_action = None
         self.has_delivered = False
-        self.can_load = True
-        self.can_carry = True
+        self.can_load = None
+        self.can_carry = None
 
     @property
     def collision_layers(self):
@@ -156,6 +156,7 @@ class Warehouse(gym.Env):
         column_height: int,
         shelf_rows: int,
         n_agents: int,
+        agent_type: str,
         msg_bits: int,
         sensor_range: int,
         request_queue_size: int,
@@ -246,6 +247,14 @@ class Warehouse(gym.Env):
             self._make_layout_from_str(layout)
 
         self.n_agents = n_agents
+        if isinstance(agent_type, Iterable) and agent_type is not str:
+            assert len(agent_type) == self.n_agents, "agent_type must be a scalar or a list of length n_agents"
+            for type_ in agent_type:
+                assert type_ in ('c', 'l', 'cl'), "invalid input: agent_type must be either c (carrying), l (loading) or cl (carrying or loading) but recived {0}".format(type_)
+            self.agent_type = agent_type
+        else:
+            self.agent_type = [agent_type] * self.n_agents
+
         self.msg_bits = msg_bits
         self.sensor_range = sensor_range
         self.max_inactivity_steps: Optional[int] = max_inactivity_steps
@@ -671,6 +680,18 @@ class Warehouse(gym.Env):
         for a in self.agents:
             self.grid[_LAYER_AGENTS, a.y, a.x] = a.id
 
+    def _set_agent_types(self):
+        for agent, type_ in zip(self.agents, self.agent_type):
+            if type_=='c':
+                agent.can_carry = True
+                agent.can_load = False
+            elif type_=='l':
+                agent.can_carry = False
+                agent.can_load = True
+            else:
+                agent.can_carry = True
+                agent.can_load = True
+
     def reset(self):
         Shelf.counter = 0
         Agent.counter = 0
@@ -703,6 +724,8 @@ class Warehouse(gym.Env):
             Agent(x, y, dir_, self.msg_bits)
             for y, x, dir_ in zip(*agent_locs, agent_dirs)
         ]
+
+        self._set_agent_types()
 
         self._recalc_grid()
 
