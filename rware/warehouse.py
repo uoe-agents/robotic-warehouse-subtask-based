@@ -17,10 +17,11 @@ _AXIS_Z = 0
 _AXIS_Y = 1
 _AXIS_X = 2
 
-_COLLISION_LAYERS = 2
+_COLLISION_LAYERS = 3
 
 _LAYER_AGENTS = 0
 _LAYER_SHELFS = 1
+_LAYER_LOADERS = 2
 
 
 class _VectorWriter:
@@ -75,6 +76,8 @@ class ImageLayer(Enum):
     AGENT_LOAD = 4 # binary layer indicating agents with load
     GOALS = 5 # binary layer indicating goal/ delivery locations
     ACCESSIBLE = 6 # binary layer indicating accessible cells (all but occupied cells/ out of map)
+    LOADERS = 7 # binary layer indicating agents in the environment which only can_load
+    LOADERS_DIRECTION = 8 # layer indicating agent directions as int (see Direction enum + 1 for values)
 
 
 class Entity:
@@ -96,6 +99,7 @@ class Agent(Entity):
         self.message = np.zeros(msg_bits)
         self.req_action: Optional[Action] = None
         self.carrying_shelf: Optional[Shelf] = None
+        self.carrying_shelf_loader = None
         self.canceled_action = None
         self.has_delivered = False
         self.can_load = None
@@ -367,7 +371,7 @@ class Warehouse(gym.Env):
         layers_min = []
         layers_max = []
         for layer in image_observation_layers:
-            if layer == ImageLayer.AGENT_DIRECTION:
+            if layer == ImageLayer.AGENT_DIRECTION or layer == ImageLayer.LOADERS_DIRECTION:
                 # directions as int
                 layer_min = np.zeros(observation_shape, dtype=np.float32)
                 layer_max = np.ones(observation_shape, dtype=np.float32) * max([d.value + 1 for d in Direction])
@@ -397,7 +401,7 @@ class Warehouse(gym.Env):
 
         self._obs_length = (
             self._obs_bits_for_self
-            + self._obs_sensor_locations * self._obs_bits_per_agent
+            + self._obs_sensor_locations * self._obs_bits_per_agent * 2 # multiplied by two to include loader agents as well
             + self._obs_sensor_locations * self._obs_bits_per_shelf
         )
 
@@ -447,6 +451,11 @@ class Warehouse(gym.Env):
                                                     "has_agent": spaces.MultiBinary(1),
                                                     "direction": spaces.Discrete(4),
                                                     "local_message": spaces.MultiBinary(
+                                                        self.msg_bits
+                                                    ),
+                                                    "has_loader": spaces.MultiBinary(1),
+                                                    "direction_loader": spaces.Discrete(4),
+                                                    "local_message_loader": spaces.MultiBinary(
                                                         self.msg_bits
                                                     ),
                                                     "has_shelf": spaces.MultiBinary(1),
@@ -513,8 +522,21 @@ class Warehouse(gym.Env):
                     elif layer_type == ImageLayer.AGENT_DIRECTION:
                         layer = np.zeros(self.grid_size, dtype=np.float32)
                         for ag in self.agents:
-                            agent_direction = ag.dir.value + 1
-                            layer[ag.x, ag.y] = float(agent_direction)
+                            if ag.can_carry:
+                                agent_direction = ag.dir.value + 1
+                                layer[ag.x, ag.y] = float(agent_direction)
+                        # print("AGENT DIRECTIONS LAYER")
+                    elif layer_type == ImageLayer.LOADERS:
+                        layer = self.grid[_LAYER_LOADERS].copy().astype(np.float32)
+                        # set all occupied agent cells to 1.0 (instead of agent ID)
+                        layer[layer > 0.0] = 1.0
+                        # print("AGENTS LAYER")
+                    elif layer_type == ImageLayer.LOADERS_DIRECTION:
+                        layer = np.zeros(self.grid_size, dtype=np.float32)
+                        for ag in self.agents:
+                            if ag.can_load and not ag.can_carry:
+                                agent_direction = ag.dir.value + 1
+                                layer[ag.x, ag.y] = float(agent_direction)
                         # print("AGENT DIRECTIONS LAYER")
                     elif layer_type == ImageLayer.AGENT_LOAD:
                         layer = np.zeros(self.grid_size, dtype=np.float32)
@@ -576,6 +598,9 @@ class Warehouse(gym.Env):
             padded_agents = np.pad(
                 self.grid[_LAYER_AGENTS], self.sensor_range, mode="constant"
             )
+            padded_loaders = np.pad(
+                self.grid[_LAYER_LOADERS], self.sensor_range, mode="constant"
+            )
             padded_shelfs = np.pad(
                 self.grid[_LAYER_SHELFS], self.sensor_range, mode="constant"
             )
@@ -588,9 +613,11 @@ class Warehouse(gym.Env):
         else:
             padded_agents = self.grid[_LAYER_AGENTS]
             padded_shelfs = self.grid[_LAYER_SHELFS]
+            padded_loaders = self.grid[_LAYER_LOADERS]
 
         agents = padded_agents[min_y:max_y, min_x:max_x].reshape(-1)
         shelfs = padded_shelfs[min_y:max_y, min_x:max_x].reshape(-1)
+        loaders = padded_loaders[min_y:max_y, min_x:max_x].reshape(-1)
 
         if self.fast_obs:
             # write flattened observations
@@ -609,7 +636,7 @@ class Warehouse(gym.Env):
             obs.write(direction)
             obs.write([int(self._is_highway(agent.x, agent.y))])
 
-            for i, (id_agent, id_shelf) in enumerate(zip(agents, shelfs)):
+            for i, (id_agent, id_shelf, id_loader) in enumerate(zip(agents, shelfs, loaders)):
                 if id_agent == 0:
                     obs.skip(1)
                     obs.write([1.0])
@@ -621,6 +648,17 @@ class Warehouse(gym.Env):
                     obs.write(direction)
                     if self.msg_bits > 0:
                         obs.write(self.agents[id_agent - 1].message)
+                if id_loader == 0:
+                    obs.skip(1)
+                    obs.write([1.0])
+                    obs.skip(3 + self.msg_bits)
+                else:
+                    obs.write([1.0])
+                    direction = np.zeros(4)
+                    direction[self.agents[id_loader - 1].dir.value] = 1.0
+                    obs.write(direction)
+                    if self.msg_bits > 0:
+                        obs.write(self.agents[id_loader - 1].message)
                 if id_shelf == 0:
                     obs.skip(2)
                 else:
@@ -659,6 +697,17 @@ class Warehouse(gym.Env):
                 obs["sensors"][i]["direction"] = self.agents[id_ - 1].dir.value
                 obs["sensors"][i]["local_message"] = self.agents[id_ - 1].message
 
+        # find neighboring agents
+        for i, id_ in enumerate(loaders):
+            if id_ == 0:
+                obs["sensors"][i]["has_loader"] = [0]
+                obs["sensors"][i]["direction_loader"] = 0
+                obs["sensors"][i]["local_message_loader"] = self.msg_bits * [0]
+            else:
+                obs["sensors"][i]["has_loader"] = [1]
+                obs["sensors"][i]["direction_loader"] = self.agents[id_ - 1].dir.value
+                obs["sensors"][i]["local_message_loader"] = self.agents[id_ - 1].message
+
         # find neighboring shelfs:
         for i, id_ in enumerate(shelfs):
             if id_ == 0:
@@ -678,7 +727,10 @@ class Warehouse(gym.Env):
             self.grid[_LAYER_SHELFS, s.y, s.x] = s.id
 
         for a in self.agents:
-            self.grid[_LAYER_AGENTS, a.y, a.x] = a.id
+            if a.can_load and not a.can_carry:
+                self.grid[_LAYER_LOADERS, a.y, a.x] = a.id
+            else:
+                self.grid[_LAYER_AGENTS, a.y, a.x] = a.id
 
     def _set_agent_types(self):
         for agent, type_ in zip(self.agents, self.agent_type):
@@ -797,7 +849,7 @@ class Warehouse(gym.Env):
                         commited_agents.add(agent_id)
 
         commited_agents = set([self.agents[id_ - 1] for id_ in commited_agents])
-        failed_agents = set(self.agents) - commited_agents
+        failed_agents = set(agent_list) - commited_agents
 
         for agent in failed_agents:
             assert agent.req_action == Action.FORWARD
@@ -816,8 +868,13 @@ class Warehouse(gym.Env):
             else:
                 agent.req_action = Action(action)
 
+        # agents that can_carry should not collide
         carry_agents = [ agent for agent in self.agents if agent.can_carry ]
         self.resolve_move_conflict(carry_agents)
+
+        # # agents that can_load should not collide
+        # load_agents = [ agent for agent in self.agents if agent.can_load ]
+        # self.resolve_move_conflict(load_agents)
 
         rewards = np.zeros(self.n_agents)
 
@@ -832,13 +889,30 @@ class Warehouse(gym.Env):
                 agent.dir = agent.req_direction()
             elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
-                if shelf_id:
+                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                if shelf_id and (agent.can_load or loader_id):
                     agent.carrying_shelf = self.shelfs[shelf_id - 1]
+                    if self.shelfs[shelf_id-1]:
+                        if agent.can_load and self.reward_type == RewardType.INDIVIDUAL:
+                            agent.carrying_shelf_loader = None
+                            # print('loaded on its own')
+                        elif loader_id and self.reward_type == RewardType.INDIVIDUAL:
+                            agent.carrying_shelf_loader = loader_id
+                            # print('loaded with loader {0}'.format(loader_id))
+                            
             elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
+                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
                 if not self._is_highway(agent.x, agent.y):
-                    agent.carrying_shelf = None
+                    if agent.can_load:
+                        agent.carrying_shelf = None
+                        # print('unloaded on its own')
+                    elif not agent.can_load and loader_id:
+                        agent.carrying_shelf = None
+                        agent.carrying_shelf_loader = None
+                        # print('unloaded with loader {0}'.format(loader_id))
                     if agent.has_delivered and self.reward_type == RewardType.TWO_STAGE:
-                        rewards[agent.id - 1] += 0.5
+                        # rewards[agent.id - 1] += 0.5
+                        raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
 
                     agent.has_delivered = False
 
@@ -865,11 +939,23 @@ class Warehouse(gym.Env):
                 rewards += 1
             elif self.reward_type == RewardType.INDIVIDUAL:
                 agent_id = self.grid[_LAYER_AGENTS, x, y]
-                rewards[agent_id - 1] += 1
-            elif self.reward_type == RewardType.TWO_STAGE:
-                agent_id = self.grid[_LAYER_AGENTS, x, y]
-                self.agents[agent_id - 1].has_delivered = True
                 rewards[agent_id - 1] += 0.5
+                loader_id = self.agents[agent_id-1].carrying_shelf_loader
+                if loader_id:
+                    rewards[agent_id - 1] += 0.25
+                    rewards[loader_id - 1] += 0.25
+                    # self.agents[agent_id-1].carrying_shelf_loader = None
+                    # print('rewarded loader and carrier')
+                    # print(rewards)
+                else:
+                    rewards[agent_id - 1] += 0.5
+                    # print('rewarded carrier')
+                    # print(rewards)
+            elif self.reward_type == RewardType.TWO_STAGE:
+                # agent_id = self.grid[_LAYER_AGENTS, x, y]
+                # self.agents[agent_id - 1].has_delivered = True
+                # rewards[agent_id - 1] += 0.5
+                raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
 
         if shelf_delivered:
             self._cur_inactive_steps = 0

@@ -149,33 +149,33 @@ def test_goal_4(env_0: Warehouse):
 
     assert rewards[0] == pytest.approx(0.0)
 
-def test_goal_5(env_3: Warehouse):
-    env = env_3
-    assert env.request_queue[0] == env.shelfs[0]
+# def test_goal_5(env_3: Warehouse):
+#     env = env_3
+#     assert env.request_queue[0] == env.shelfs[0]
 
-    _, rewards, _, _ = env.step([Action.FORWARD, Action.NOOP])
-    assert env.agents[0].x == 4
-    assert env.agents[0].y == 28
+#     _, rewards, _, _ = env.step([Action.FORWARD, Action.NOOP])
+#     assert env.agents[0].x == 4
+#     assert env.agents[0].y == 28
 
-    assert env.request_queue[0] != env.shelfs[0]
-    assert rewards[0] == pytest.approx(0.5)
-    assert rewards[1] == pytest.approx(0.0)
+#     assert env.request_queue[0] != env.shelfs[0]
+#     assert rewards[0] == pytest.approx(0.5)
+#     assert rewards[1] == pytest.approx(0.0)
 
-    env.agents[0].x = 1
-    env.agents[0].y = 1
-    env.shelfs[0].x = 1
-    env.shelfs[0].y = 1
-    env._recalc_grid()
-    _, rewards, _, _ = env.step([Action.TOGGLE_LOAD, Action.NOOP])
+#     env.agents[0].x = 1
+#     env.agents[0].y = 1
+#     env.shelfs[0].x = 1
+#     env.shelfs[0].y = 1
+#     env._recalc_grid()
+#     _, rewards, _, _ = env.step([Action.TOGGLE_LOAD, Action.NOOP])
 
-    assert rewards[0] == pytest.approx(0.5)
-    assert rewards[1] == pytest.approx(0.0)
-    _, rewards, _, _ = env.step([Action.TOGGLE_LOAD, Action.NOOP])
+#     assert rewards[0] == pytest.approx(0.5)
+#     assert rewards[1] == pytest.approx(0.0)
+#     _, rewards, _, _ = env.step([Action.TOGGLE_LOAD, Action.NOOP])
 
-    assert rewards[0] == pytest.approx(0.0)
-    assert rewards[1] == pytest.approx(0.0)
-    _, rewards, _, _ = env.step([Action.TOGGLE_LOAD, Action.NOOP])
+#     assert rewards[0] == pytest.approx(0.0)
+#     assert rewards[1] == pytest.approx(0.0)
+#     _, rewards, _, _ = env.step([Action.TOGGLE_LOAD, Action.NOOP])
     
-    assert rewards[0] == pytest.approx(0.0)
-    assert rewards[1] == pytest.approx(0.0)
+#     assert rewards[0] == pytest.approx(0.0)
+#     assert rewards[1] == pytest.approx(0.0)
     

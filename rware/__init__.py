@@ -23,7 +23,7 @@ for size, diff, agents in _perms:
             "shelf_rows": _sizes[size][0],
             "shelf_columns": _sizes[size][1],
             "n_agents": agents,
-            "agent_type": ['cl']*agents,
+            "agent_type": ['c', 'l', 'cl'],
             "msg_bits": 0,
             "sensor_range": 1,
             "request_queue_size": int(agents * _difficulty[diff]),
