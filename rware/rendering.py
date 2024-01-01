@@ -52,17 +52,22 @@ _GREEN = (0, 255, 0)
 _RED = (255, 0, 0)
 _ORANGE = (255, 165, 0)
 _DARKORANGE = (255, 140, 0)
+_LIGHTORANGE = (255, 200, 0)
 _DARKSLATEBLUE = (72, 61, 139)
 _TEAL = (0, 128, 128)
+_MAROON = (128, 0, 0)
+_BLUE = (30,144,255)
 
 _BACKGROUND_COLOR = _WHITE
 _GRID_COLOR = _BLACK
 _SHELF_COLOR = _DARKSLATEBLUE
 _SHELF_REQ_COLOR = _TEAL
 _AGENT_COLOR = _DARKORANGE
-_AGENT_LOADED_COLOR = _RED
+_AGENT_LOADED_COLOR = _WHITE
 _AGENT_DIR_COLOR = _BLACK
 _GOAL_COLOR = (60, 60, 60)
+_CARRIER_COLOR = _MAROON
+_LOADER_AGENT = _BLUE
 
 _SHELF_PADDING = 2
 
@@ -267,9 +272,17 @@ class Viewer(object):
                 verts += [x, y]
             circle = pyglet.graphics.vertex_list(resolution, ("v2f", verts))
 
-            draw_color = _AGENT_LOADED_COLOR if agent.carrying_shelf else _AGENT_COLOR
+            if agent.can_carry and not agent.can_load:
+                agent_color = _CARRIER_COLOR
+            elif not agent.can_carry and agent.can_load:
+                agent_color = _LOADER_AGENT
+            else:
+                agent_color = _AGENT_COLOR
+
+            draw_color = _AGENT_LOADED_COLOR if agent.carrying_shelf else agent_color
 
             glColor3ub(*draw_color)
+
             circle.draw(GL_POLYGON)
 
         for agent in env.agents:
