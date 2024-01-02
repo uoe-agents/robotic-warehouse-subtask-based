@@ -63,7 +63,7 @@ _GRID_COLOR = _BLACK
 _SHELF_COLOR = _DARKSLATEBLUE
 _SHELF_REQ_COLOR = _TEAL
 _AGENT_COLOR = _DARKORANGE
-_AGENT_LOADED_COLOR = _WHITE
+_AGENT_LOADED_COLOR = _RED
 _AGENT_DIR_COLOR = _BLACK
 _GOAL_COLOR = (60, 60, 60)
 _CARRIER_COLOR = _MAROON
@@ -246,12 +246,17 @@ class Viewer(object):
 
         radius = self.grid_size / 3
 
-        resolution = 6
-
         for agent in env.agents:
 
             col, row = agent.x, agent.y
             row = self.rows - row - 1  # pyglet rendering is reversed
+
+            if agent.can_carry and not agent.can_load:
+                resolution = 6
+            elif not agent.can_carry and agent.can_load:
+                resolution = 4
+            else:
+                resolution = 8
 
             # make a circle
             verts = []
@@ -272,14 +277,14 @@ class Viewer(object):
                 verts += [x, y]
             circle = pyglet.graphics.vertex_list(resolution, ("v2f", verts))
 
-            if agent.can_carry and not agent.can_load:
-                agent_color = _CARRIER_COLOR
-            elif not agent.can_carry and agent.can_load:
-                agent_color = _LOADER_AGENT
-            else:
-                agent_color = _AGENT_COLOR
+            # if agent.can_carry and not agent.can_load:
+            #     agent_color = _CARRIER_COLOR
+            # elif not agent.can_carry and agent.can_load:
+            #     agent_color = _LOADER_AGENT
+            # else:
+            #     agent_color = _AGENT_COLOR
 
-            draw_color = _AGENT_LOADED_COLOR if agent.carrying_shelf else agent_color
+            draw_color = _AGENT_LOADED_COLOR if agent.carrying_shelf else _AGENT_COLOR
 
             glColor3ub(*draw_color)
 
