@@ -130,8 +130,8 @@ class Viewer(object):
         self.window.dispatch_events()
 
         self._draw_grid()
-        self._draw_goals(env)
         self._draw_shelfs(env)
+        self._draw_goals(env)
         self._draw_agents(env)
 
         if return_rgb_array:

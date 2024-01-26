@@ -929,11 +929,11 @@ class Warehouse(gym.Env):
                 continue
             # a shelf was successfully delived.
             shelf_delivered = True
-            # remove from queue and replace it
-            new_request = np.random.choice(
-                list(set(self.shelfs) - set(self.request_queue))
-            )
-            self.request_queue[self.request_queue.index(shelf)] = new_request
+            # # remove from queue and replace it
+            # new_request = np.random.choice(
+            #     list(set(self.shelfs) - set(self.request_queue))
+            # )
+            # self.request_queue[self.request_queue.index(shelf)] = new_request
             # also reward the agents
             if self.reward_type == RewardType.GLOBAL:
                 rewards += 1
@@ -957,6 +957,12 @@ class Warehouse(gym.Env):
                 # rewards[agent_id - 1] += 0.5
                 raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
 
+            # unload shelf from the agent and remove it from environment
+            self.agents[agent_id-1].carrying_shelf=None
+            self.grid[_LAYER_SHELFS, x, y] = 0
+            self.request_queue.remove(shelf)
+            self.shelfs[shelf_id-1].id = 0
+
         if shelf_delivered:
             self._cur_inactive_steps = 0
         else:
@@ -966,7 +972,7 @@ class Warehouse(gym.Env):
         if (
             self.max_inactivity_steps
             and self._cur_inactive_steps >= self.max_inactivity_steps
-        ) or (self.max_steps and self._cur_steps >= self.max_steps):
+        ) or (self.max_steps and self._cur_steps >= self.max_steps) or (len(self.request_queue)==0):
             dones = self.n_agents * [True]
         else:
             dones = self.n_agents * [False]
