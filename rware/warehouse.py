@@ -895,9 +895,15 @@ class Warehouse(gym.Env):
                     if self.shelfs[shelf_id-1]:
                         if agent.can_load and self.reward_type == RewardType.INDIVIDUAL:
                             agent.carrying_shelf_loader = None
+                            if self.shelfs[shelf_id-1] in self.request_queue:
+                                rewards[agent.id - 1] += 0.5
                             # print('loaded on its own')
                         elif loader_id and self.reward_type == RewardType.INDIVIDUAL:
                             agent.carrying_shelf_loader = loader_id
+                            # give reward to loader if it loaded the requested shelf
+                            if self.shelfs[shelf_id-1] in self.request_queue:
+                                rewards[loader_id - 1] += 0.25
+                                rewards[agent.id - 1] += 0.25
                             # print('loaded with loader {0}'.format(loader_id))
                             
             elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
@@ -940,17 +946,18 @@ class Warehouse(gym.Env):
             elif self.reward_type == RewardType.INDIVIDUAL:
                 agent_id = self.grid[_LAYER_AGENTS, x, y]
                 rewards[agent_id - 1] += 0.5
-                loader_id = self.agents[agent_id-1].carrying_shelf_loader
-                if loader_id:
-                    rewards[agent_id - 1] += 0.25
-                    rewards[loader_id - 1] += 0.25
-                    # self.agents[agent_id-1].carrying_shelf_loader = None
-                    # print('rewarded loader and carrier')
-                    # print(rewards)
-                else:
-                    rewards[agent_id - 1] += 0.5
-                    # print('rewarded carrier')
-                    # print(rewards)
+                # # reward 
+                # loader_id = self.agents[agent_id-1].carrying_shelf_loader
+                # if loader_id:
+                #     rewards[agent_id - 1] += 0.25
+                #     # rewards[loader_id - 1] += 0.25
+                #     # self.agents[agent_id-1].carrying_shelf_loader = None
+                #     # print('rewarded loader and carrier')
+                #     # print(rewards)
+                # else:
+                #     rewards[agent_id - 1] += 0.5
+                #     # print('rewarded carrier')
+                #     # print(rewards)
             elif self.reward_type == RewardType.TWO_STAGE:
                 # agent_id = self.grid[_LAYER_AGENTS, x, y]
                 # self.agents[agent_id - 1].has_delivered = True
