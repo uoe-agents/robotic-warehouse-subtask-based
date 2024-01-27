@@ -251,7 +251,9 @@ class Warehouse(gym.Env):
             self._make_layout_from_str(layout)
 
         self.n_agents = n_agents
-        if isinstance(agent_type, Iterable) and not isinstance(agent_type, str):
+        if agent_type is None:
+            self.agent_type = (['c', 'l', 'cl']*self.n_agents)[:self.n_agents]
+        elif isinstance(agent_type, Iterable) and not isinstance(agent_type, str):
             assert len(agent_type) == self.n_agents, "agent_type must be a scalar or a list (found {0}) of length n_agents (is {1}) ".format( len(agent_type) , self.n_agents)
             for type_ in agent_type:
                 assert type_ in ('c', 'l', 'cl'), "invalid input: agent_type must be either c (carrying), l (loading) or cl (carrying or loading) but recived {0}".format(type_)
@@ -946,7 +948,7 @@ class Warehouse(gym.Env):
             elif self.reward_type == RewardType.INDIVIDUAL:
                 agent_id = self.grid[_LAYER_AGENTS, x, y]
                 rewards[agent_id - 1] += 0.5
-                # # reward 
+                # # reward at the end when item is delivered 
                 # loader_id = self.agents[agent_id-1].carrying_shelf_loader
                 # if loader_id:
                 #     rewards[agent_id - 1] += 0.25
@@ -965,6 +967,7 @@ class Warehouse(gym.Env):
                 raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
 
             # unload shelf from the agent and remove it from environment
+            agent_id = self.grid[_LAYER_AGENTS, x, y]
             self.agents[agent_id-1].carrying_shelf=None
             self.grid[_LAYER_SHELFS, x, y] = 0
             self.request_queue.remove(shelf)

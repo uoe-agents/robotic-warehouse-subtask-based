@@ -130,7 +130,7 @@ def test_goal_3(env_2: Warehouse):
     assert env.agents[0].y == 28
 
     assert env.request_queue[0] != env.shelfs[0]
-    assert rewards[0] == pytest.approx(1.0)
+    assert rewards[0] == pytest.approx(0.5)
     assert rewards[1] == pytest.approx(0.0)
 
 

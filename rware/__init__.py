@@ -11,22 +11,24 @@ _sizes = {
 
 _difficulty = {"-easy": 2, "": 1, "-hard": 0.5}
 
-_perms = itertools.product(_sizes.keys(), _difficulty, range(1, 20),)
+_diversity = {"-div":True, "":False}
 
-for size, diff, agents in _perms:
+_perms = itertools.product(_sizes.keys(), range(1,20), range(1, 20), _diversity)
+
+for size, items, agents, div in _perms:
     # normal tasks
     gym.register(
-        id=f"rware-{size}-{agents}ag{diff}-v1",
+        id=f"rware-{size}-{agents}ag{div}-{items}it-v1",
         entry_point="rware.warehouse:Warehouse",
         kwargs={
             "column_height": 8,
             "shelf_rows": _sizes[size][0],
             "shelf_columns": _sizes[size][1],
             "n_agents": agents,
-            "agent_type": ['c', 'l', 'cl'],
+            "agent_type": None if _diversity[div] else "cl",
             "msg_bits": 0,
             "sensor_range": 1,
-            "request_queue_size": int(agents * _difficulty[diff]),
+            "request_queue_size": items,
             "max_inactivity_steps": None,
             "max_steps": 500,
             "reward_type": RewardType.INDIVIDUAL,
@@ -37,8 +39,8 @@ for size, diff, agents in _perms:
 def image_registration():
     _observation_type = {"": ObserationType.FLATTENED, "-img": ObserationType.IMAGE}
     _image_directional = {"": True, "-Nd": False}
-    _perms = itertools.product(_sizes.keys(), _difficulty, _observation_type, _image_directional, range(1, 20),)
-    for size, diff, obs_type, directional, agents in _perms:
+    _perms = itertools.product(_sizes.keys(), range(1,20), _observation_type, _image_directional, range(1, 20),)
+    for size, items, obs_type, directional, agents in _perms:
         if obs_type == "" and directional == "":
             # already registered before
             continue
@@ -46,7 +48,7 @@ def image_registration():
             # directional values should only be used with image observations 
             continue
         gym.register(
-            id=f"rware{obs_type}{directional}-{size}-{agents}ag{diff}-v1",
+            id=f"rware{obs_type}{directional}-{size}-{agents}ag-{items}it-v1",
             entry_point="rware.warehouse:Warehouse",
             kwargs={
                 "column_height": 8,
@@ -56,7 +58,7 @@ def image_registration():
                 "agent_type": ['cl']*agents,
                 "msg_bits": 0,
                 "sensor_range": 1,
-                "request_queue_size": int(agents * _difficulty[diff]),
+                "request_queue_size": items,
                 "max_inactivity_steps": None,
                 "max_steps": 500,
                 "reward_type": RewardType.INDIVIDUAL,
@@ -71,14 +73,14 @@ def full_registration():
     _sensor_ranges = {f"-{sight}s": sight for sight in range(2, 6)}
     _sensor_ranges[""] = 1
     _image_directional = {"": True, "-Nd": False}
-    _perms = itertools.product(_sizes.keys(), _difficulty, _observation_type, _sensor_ranges, _image_directional, range(1, 20), range(1, 16),)
-    for size, diff, obs_type, sensor_range, directional, agents, column_height in _perms:
+    _perms = itertools.product(_sizes.keys(), range(1,20), _observation_type, _sensor_ranges, _image_directional, range(1, 20), range(1, 16),)
+    for size, items, obs_type, sensor_range, directional, agents, column_height in _perms:
         # normal tasks with modified column height
         if directional != "" and obs_type == "":
             # directional should only be used with image observations 
             continue
         gym.register(
-            id=f"rware{obs_type}{directional}{sensor_range}-{size}-{column_height}h-{agents}ag{diff}-v1",
+            id=f"rware{obs_type}{directional}{sensor_range}-{size}-{column_height}h-{agents}ag-{items}it-v1",
             entry_point="rware.warehouse:Warehouse",
             kwargs={
                 "column_height": column_height,
@@ -88,7 +90,7 @@ def full_registration():
                 "agent_type": ['cl']*agents,
                 "msg_bits": 0,
                 "sensor_range": _sensor_ranges[sensor_range],
-                "request_queue_size": int(agents * _difficulty[diff]),
+                "request_queue_size": items,
                 "max_inactivity_steps": None,
                 "max_steps": 500,
                 "reward_type": RewardType.INDIVIDUAL,
