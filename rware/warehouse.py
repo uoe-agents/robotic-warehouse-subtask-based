@@ -438,6 +438,8 @@ class Warehouse(gym.Env):
                                     OrderedDict(
                                         {
                                             "location": location_space,
+                                            "can_carry": spaces.MultiBinary(1),
+                                            "can_load": spaces.MultiBinary(1),
                                             "carrying_shelf": spaces.MultiBinary(1),
                                             "direction": spaces.Discrete(4),
                                             "on_highway": spaces.MultiBinary(1),
@@ -632,7 +634,7 @@ class Warehouse(gym.Env):
                 agent_x = agent.x
                 agent_y = agent.y
 
-            obs.write([agent_x, agent_y, int(agent.carrying_shelf is not None)])
+            obs.write([agent_x, agent_y, int(agent.can_carry), int(agent.can_load) ,int(agent.carrying_shelf is not None)])
             direction = np.zeros(4)
             direction[agent.dir.value] = 1.0
             obs.write(direction)
@@ -681,6 +683,8 @@ class Warehouse(gym.Env):
         # --- self data
         obs["self"] = {
             "location": np.array([agent_x, agent_y]),
+            "can_carry": [int(agent.can_carry)],
+            "can_load": [int(agent.can_load)],
             "carrying_shelf": [int(agent.carrying_shelf is not None)],
             "direction": agent.dir.value,
             "on_highway": [int(self._is_highway(agent.x, agent.y))],
