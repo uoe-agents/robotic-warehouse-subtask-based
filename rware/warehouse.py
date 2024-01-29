@@ -897,24 +897,32 @@ class Warehouse(gym.Env):
                     if self.shelfs[shelf_id-1]:
                         if agent.can_load and self.reward_type == RewardType.INDIVIDUAL:
                             agent.carrying_shelf_loader = None
+                            # reward when requested shelf is loaded
                             if self.shelfs[shelf_id-1] in self.request_queue:
-                                rewards[agent.id - 1] += 0.5
+                                rewards[agent.id - 1] += 0.5/self.request_queue_size
                             # print('loaded on its own')
                         elif loader_id and self.reward_type == RewardType.INDIVIDUAL:
                             agent.carrying_shelf_loader = loader_id
-                            # give reward to loader if it loaded the requested shelf
+                            # reward when requested shelf is loaded
                             if self.shelfs[shelf_id-1] in self.request_queue:
-                                rewards[loader_id - 1] += 0.25
-                                rewards[agent.id - 1] += 0.25
+                                rewards[loader_id - 1] += 0.25/self.request_queue_size
+                                rewards[agent.id - 1] += 0.25/self.request_queue_size
                             # print('loaded with loader {0}'.format(loader_id))
                             
             elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
                 loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
                 if not self._is_highway(agent.x, agent.y):
                     if agent.can_load:
+                    # remove reward when requested shelf is unloaded
+                        if agent.carrying_shelf in self.request_queue:
+                            rewards[agent.id - 1] -= 0.5/self.request_queue_size
                         agent.carrying_shelf = None
                         # print('unloaded on its own')
                     elif not agent.can_load and loader_id:
+                        # remove reward when requested shelf is unloaded
+                        if agent.carrying_shelf in self.request_queue:
+                            rewards[loader_id - 1] -= 0.25/self.request_queue_size
+                            rewards[agent.id - 1] -= 0.25/self.request_queue_size
                         agent.carrying_shelf = None
                         agent.carrying_shelf_loader = None
                         # print('unloaded with loader {0}'.format(loader_id))
@@ -947,7 +955,7 @@ class Warehouse(gym.Env):
                 rewards += 1
             elif self.reward_type == RewardType.INDIVIDUAL:
                 agent_id = self.grid[_LAYER_AGENTS, x, y]
-                rewards[agent_id - 1] += 0.5
+                rewards[agent_id - 1] += 0.5/self.request_queue_size
                 # # reward at the end when item is delivered 
                 # loader_id = self.agents[agent_id-1].carrying_shelf_loader
                 # if loader_id:
