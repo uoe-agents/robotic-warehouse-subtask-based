@@ -910,7 +910,7 @@ class Warehouse(gym.Env):
 
         # if there is a swap conflict, skip the swap
         if self.swap_conflict(agents_array, swap):
-            print('conflict found')
+            # print('conflict found')
             return agents_array, actions_copy
 
         # swap actions
