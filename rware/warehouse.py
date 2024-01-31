@@ -885,28 +885,28 @@ class Warehouse(gym.Env):
         if agent_array[swap[0]].can_carry and not agent_array[swap[1]].can_carry:
             # make sure there is no carrier at loader's location
             if self.grid[_LAYER_AGENTS, agent_array[swap[1]].y, agent_array[swap[1]].x]:
-                print(f'agent {swap[0]+1} is carrier and conflicts with carrier at location of loader {swap[1]+1}')
+                # print(f'agent {swap[0]+1} is carrier and conflicts with carrier at location of loader {swap[1]+1}')
                 return True
             # make sure there is no loader at carrier's location
             if self.grid[_LAYER_LOADERS, agent_array[swap[0]].y, agent_array[swap[0]].x]:
-                print(f'agent {swap[1]+1} is loader and conflicts with loader at location of agent {swap[0]+1}')
+                # print(f'agent {swap[1]+1} is loader and conflicts with loader at location of agent {swap[0]+1}')
                 return True
         # and vice vice versa
         if agent_array[swap[1]].can_carry and not agent_array[swap[0]].can_carry:
             # make sure there is no carrier at loader's location
             if self.grid[_LAYER_AGENTS, agent_array[swap[0]].y, agent_array[swap[0]].x]:
-                print(f'agent {swap[1]+1} is carrier and conflicts with carrier at location of loader {swap[0]+1}')
+                # print(f'agent {swap[1]+1} is carrier and conflicts with carrier at location of loader {swap[0]+1}')
                 return True
             # make sure there is no loader at carrier's location
             if self.grid[_LAYER_LOADERS, agent_array[swap[1]].y, agent_array[swap[1]].x]:
-                print(f'agent {swap[0]+1} is loader and conflicts with loader at location of agent {swap[1]+1}')
+                # print(f'agent {swap[0]+1} is loader and conflicts with loader at location of agent {swap[1]+1}')
                 return True
             
         return False
 
     def swap_players(self, swap, actions):
         agents_array = deepcopy(self.agents)
-        actions_copy = copy(actions)
+        actions_copy = list(copy(actions))
 
         # if there is a swap conflict, skip the swap
         if self.swap_conflict(agents_array, swap):
