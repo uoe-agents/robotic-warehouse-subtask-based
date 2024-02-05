@@ -396,7 +396,7 @@ class Warehouse(gym.Env):
     def _use_slow_obs(self):
         self.fast_obs = False
 
-        self._obs_bits_for_self = 4 + len(Direction)
+        self._obs_bits_for_self = 6 + len(Direction)
         self._obs_bits_per_agent = 1 + len(Direction) + self.msg_bits
         self._obs_bits_per_shelf = 2
         self._obs_bits_for_requests = 2
@@ -732,7 +732,8 @@ class Warehouse(gym.Env):
     def _recalc_grid(self):
         self.grid[:] = 0
         for s in self.shelfs:
-            self.grid[_LAYER_SHELFS, s.y, s.x] = s.id
+            if s.id>0:
+                self.grid[_LAYER_SHELFS, s.y, s.x] = s.id
 
         for a in self.agents:
             if a.can_load and not a.can_carry:
@@ -1155,10 +1156,12 @@ class Warehouse(gym.Env):
             shelf_id = self.grid[_LAYER_SHELFS, x, y]
             if not shelf_id:
                 continue
+            # print('shelf in goal')
             shelf = self.shelfs[shelf_id - 1]
 
             if shelf not in self.request_queue:
                 continue
+            # print('requested shelf in goal')
             # a shelf was successfully delived.
             shelf_delivered = True
             # # remove from queue and replace it
@@ -1196,6 +1199,7 @@ class Warehouse(gym.Env):
             self.grid[_LAYER_SHELFS, x, y] = 0
             self.request_queue.remove(shelf)
             self.shelfs[shelf_id-1].id = 0
+            # self._recalc_grid()
 
         if shelf_delivered:
             self._cur_inactive_steps = 0
