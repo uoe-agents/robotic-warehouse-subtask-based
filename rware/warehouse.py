@@ -1011,7 +1011,8 @@ class Warehouse(gym.Env):
                 agent.dir = agent.req_direction()
             elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
                 shelf_id = grid_copy[_LAYER_SHELFS, agent.y, agent.x]
-                loader_id = grid_copy[_LAYER_LOADERS, agent.y, agent.x]
+                # loader_id = grid_copy[_LAYER_LOADERS, agent.y, agent.x]
+                loader_id = self.find_nearest_loader(grid_copy, agent.y, agent.x )
                 if shelf_id and (agent.can_load or loader_id):
                     agent.carrying_shelf = shelfs_copy[shelf_id - 1]
                     if shelfs_copy[shelf_id-1]:
@@ -1031,7 +1032,8 @@ class Warehouse(gym.Env):
                             
             elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
                 shelf_id = grid_copy[_LAYER_SHELFS, agent.y, agent.x]
-                loader_id = grid_copy[_LAYER_LOADERS, agent.y, agent.x]
+                # loader_id = grid_copy[_LAYER_LOADERS, agent.y, agent.x]
+                loader_id = self.find_nearest_loader(grid_copy, agent.y, agent.x )
                 if not self._is_highway(agent.x, agent.y):
                     if agent.can_load:
                     # remove reward when requested shelf is unloaded
@@ -1073,6 +1075,20 @@ class Warehouse(gym.Env):
 
 
         return list(rewards)
+    
+    def find_nearest_loader(self, grid, row, col):
+        # Define the boundaries of the 3x3 window
+        start_row = max(row - 1, 0)
+        end_row = min(row + 2, grid[_LAYER_LOADERS].shape[0])
+        start_col = max(col - 1, 0)
+        end_col = min(col + 2, grid[_LAYER_LOADERS].shape[1])
+    
+        # Iterate through the window and check for non-zero values
+        for i in range(start_row, end_row):
+            for j in range(start_col, end_col):
+                if grid[_LAYER_LOADERS,i, j] != 0:
+                    return grid[_LAYER_LOADERS,i,j]
+        return None
 
     def step(
         self, actions: List[Action]
@@ -1107,7 +1123,8 @@ class Warehouse(gym.Env):
                 agent.dir = agent.req_direction()
             elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
-                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                # loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
                 if shelf_id and (agent.can_load or loader_id):
                     agent.carrying_shelf = self.shelfs[shelf_id - 1]
                     if self.shelfs[shelf_id-1]:
@@ -1127,7 +1144,8 @@ class Warehouse(gym.Env):
                             
             elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
-                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                # loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
                 if not self._is_highway(agent.x, agent.y):
                     if agent.can_load:
                     # remove reward when requested shelf is unloaded
