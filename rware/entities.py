@@ -24,8 +24,6 @@ class VectorWriter:
     def skip(self, bits):
         self.idx += bits
 
-
-
 class Action(Enum):
     NOOP = 0
     FORWARD = 1
@@ -33,19 +31,16 @@ class Action(Enum):
     RIGHT = 3
     TOGGLE_LOAD = 4
 
-
 class Direction(Enum):
     UP = 0
     DOWN = 1
     LEFT = 2
     RIGHT = 3
 
-
 class RewardType(Enum):
     GLOBAL = 0
     INDIVIDUAL = 1
     TWO_STAGE = 2
-
 
 class ObserationType(Enum):
     DICT = 0
@@ -66,7 +61,6 @@ class ImageLayer(Enum):
     LOADERS = 7 # binary layer indicating agents in the environment which only can_load
     LOADERS_DIRECTION = 8 # layer indicating agent directions as int (see Direction enum + 1 for values)
 
-
 class Entity:
     def __init__(self, id_: int, x: int, y: int):
         self.id = id_
@@ -74,7 +68,6 @@ class Entity:
         self.prev_y = None
         self.x = x
         self.y = y
-
 
 class Agent(Entity):
     counter = 0
@@ -123,7 +116,6 @@ class Agent(Entity):
             return wraplist[(wraplist.index(self.dir) - 1) % len(wraplist)]
         else:
             return self.dir
-
 
 class Shelf(Entity):
     counter = 0

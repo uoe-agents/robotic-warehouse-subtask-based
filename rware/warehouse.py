@@ -174,6 +174,24 @@ class Warehouse(gym.Env):
 
         self.renderer = None
 
+        # make subtasks mask matrix for agents of the size n_agents x n_subtasks(3)
+        # sutask 1: going to a requested shelf location
+        # subtask 2: then, load the requested shelf
+        # subtask 3: finally, deliver the shelf to the goal location
+        # subtask 4: for loader agents, help load a carrier agent
+        # subtask 5: remove subtask 1 reward when it doesn't lead to subtask 2
+        # subtask 6: remove subtask 2 reward when it doesn't lead to subtask 3
+
+        self.subtasks_mask = np.zeros((self.n_agents, 6))
+        for i,agent_type in enumerate(self.agent_type):
+            if agent_type=='c':
+                self.subtasks_mask[i,:] = [1, 1, 1, 0, 1, 1]
+            elif agent_type=='l':
+                self.subtasks_mask[i,:] = [1, 0, 0, 1, 1, 0]
+            else:
+                self.subtasks_mask[i,:] = [1, 1, 1, 0, 1, 1]
+
+
     def _make_layout_from_params(self, shelf_columns, shelf_rows, column_height):
         assert shelf_columns % 2 == 1, "Only odd number of shelf columns is supported"
 
