@@ -629,8 +629,6 @@ class Warehouse(gym.Env):
                     find_empty_shelf_locations.append((x,y))
         return find_empty_shelf_locations
 
-        
-
     def _set_agent_types(self):
         for agent, type_ in zip(self.agents, self.agent_type):
             if type_=='c':
@@ -800,8 +798,8 @@ class Warehouse(gym.Env):
                 agent.dir = agent.req_direction()
             elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
-                # loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
-                loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
+                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                # loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
                 if shelf_id and (agent.can_load or loader_id):
                     agent.carrying_shelf = self.shelfs[shelf_id - 1]
                     if self.shelfs[shelf_id-1]:
@@ -819,8 +817,8 @@ class Warehouse(gym.Env):
                             
             elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
-                # loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
-                loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
+                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                # loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
                 if not self._is_highway(agent.x, agent.y):
                     if agent.can_load:
                     # remove reward when requested shelf is unloaded
