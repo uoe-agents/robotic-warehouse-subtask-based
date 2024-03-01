@@ -25,6 +25,13 @@
 
 A version of robotic warehouse with diversity in agents roles (carrier, loaders, carrier+loaders), also provides a reward mapping function which internally swaps the role of agents to give its rewards from the perspective of the trajectory traversed by the swapped agent. Discontnued, because such sahring of trajectories lead to mis-estimation of agent's value functions due to change in agent's transition dynamics with the environment.
 
+Below is an illustration with three diverse agents.
+<p align="center">
+ <img width="450px" src="docs/img/drware_3ag.mp4" align="center" alt="Diverse Multi-Robot Warehouse (RWARE) illustration" />
+</p>
+
+README of the original RWARE repositiory is given below:
+
 # Environment Description
 
 The multi-robot warehouse (RWARE) environment simulates a warehouse with robots moving and delivering requested goods. The simulator is inspired by real-world applications, in which robots pick-up shelves and deliver them to a workstation. Humans access the content of a shelf, and then robots can return them to empty shelf locations.
