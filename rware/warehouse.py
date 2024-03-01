@@ -926,14 +926,14 @@ class Warehouse(gym.Env):
                     if self.shelfs[shelf_id-1]:
                         if agent.can_load and self.reward_type == RewardType.INDIVIDUAL:
                             if self.shelfs[shelf_id-1] in self.request_queue:
-                                rewards[agent.id - 1] += 0.5/self.request_queue_size
+                                rewards[agent.id - 1] += 0.5
                             # print('loaded on its own')
                         elif loader_id and self.reward_type == RewardType.INDIVIDUAL:
                             # agent.carrying_shelf_loader = loader_id
                             # reward when requested shelf is loaded
                             if self.shelfs[shelf_id-1] in self.request_queue:
-                                rewards[loader_id - 1] += 0.25/self.request_queue_size
-                                rewards[agent.id - 1] += 0.25/self.request_queue_size
+                                rewards[loader_id - 1] += 0.25
+                                rewards[agent.id - 1] += 0.25
                             # print('loaded with loader {0}'.format(loader_id))
                             
             elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
@@ -944,14 +944,14 @@ class Warehouse(gym.Env):
                     if agent.can_load:
                     # remove reward when requested shelf is unloaded
                         if self.shelfs[shelf_id-1] in self.request_queue:
-                            rewards[agent.id - 1] -= 0.5/self.request_queue_size
+                            rewards[agent.id - 1] -= 0.5
                         agent.carrying_shelf = None
                         # print('unloaded on its own')
                     elif not agent.can_load and loader_id:
                         # remove reward when requested shelf is unloaded
                         if self.shelfs[shelf_id-1] in self.request_queue:
-                            rewards[loader_id - 1] -= 0.25/self.request_queue_size
-                            rewards[agent.id - 1] -= 0.25/self.request_queue_size
+                            rewards[loader_id - 1] -= 0.25
+                            rewards[agent.id - 1] -= 0.25
                         agent.carrying_shelf = None
                     if agent.has_delivered and self.reward_type == RewardType.TWO_STAGE:
                         # rewards[agent.id - 1] += 0.5
@@ -976,7 +976,7 @@ class Warehouse(gym.Env):
                 rewards += 1
             elif self.reward_type == RewardType.INDIVIDUAL:
                 agent_id = self.grid[_LAYER_AGENTS, x, y]
-                rewards[agent_id - 1] += 0.5/self.request_queue_size
+                rewards[agent_id - 1] += 0.5
             elif self.reward_type == RewardType.TWO_STAGE:
                 raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
 
