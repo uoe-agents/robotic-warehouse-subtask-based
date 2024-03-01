@@ -135,4 +135,3 @@ class Shelf(Entity):
     @property
     def collision_layers(self):
         return (_LAYER_SHELFS,)
-

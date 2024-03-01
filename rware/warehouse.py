@@ -610,16 +610,26 @@ class Warehouse(gym.Env):
             else:
                 self.grid[_LAYER_AGENTS, a.y, a.x] = a.id
 
-    def _recalc_dummy_grid(self, grid_copy, dummy_agents, dummy_shelfs):
-        grid_copy[:] = 0
-        for s in dummy_shelfs:
-            grid_copy[_LAYER_SHELFS, s.y, s.x] = s.id
+        # refill request queue when a shelf is delivered
+        if len(self.removed_shelf_ids) > 0:
+            for s in self.shelfs:
+                if s.id == 0:
+                    empty_shelf_locations = self.find_empty_shelf_locations()
+                    s.id = self.removed_shelf_ids.pop()
+                    s.x, s.y = empty_shelf_locations.pop()
+                    # add a new random shelf to request queue but not repeating the same shelf in the queue
+                    eligible_shelfs = [shelf for shelf in self.shelfs if shelf not in self.request_queue]
+                    self.request_queue.append(np.random.choice(eligible_shelfs))
 
-        for a in dummy_agents:
-            if a.can_load and not a.can_carry:
-                grid_copy[_LAYER_LOADERS, a.y, a.x] = a.id
-            else:
-                grid_copy[_LAYER_AGENTS, a.y, a.x] = a.id
+    def find_empty_shelf_locations(self):
+        find_empty_shelf_locations = []
+        for x in range(self.grid_size[1]):
+            for y in range(self.grid_size[0]):
+                if self._is_highway(x, y) == 0 and self.grid[_LAYER_SHELFS, y, x] == 0:
+                    find_empty_shelf_locations.append((x,y))
+        return find_empty_shelf_locations
+
+        
 
     def _set_agent_types(self):
         for agent, type_ in zip(self.agents, self.agent_type):
@@ -665,6 +675,8 @@ class Warehouse(gym.Env):
             Agent(x, y, dir_, self.msg_bits)
             for y, x, dir_ in zip(*agent_locs, agent_dirs)
         ]
+
+        self.removed_shelf_ids = []
 
         self._set_agent_types()
 
@@ -854,8 +866,9 @@ class Warehouse(gym.Env):
             self.agents[agent_id-1].carrying_shelf=None
             self.grid[_LAYER_SHELFS, x, y] = 0
             self.request_queue.remove(shelf)
+            self.removed_shelf_ids.append(shelf.id)
             self.shelfs[shelf_id-1].id = 0
-            # self._recalc_grid()
+            self._recalc_grid()
 
         if shelf_delivered:
             self._cur_inactive_steps = 0
