@@ -27,7 +27,7 @@ A version of robotic warehouse with diversity in agents roles (carrier, loaders,
 
 Below is an illustration with three diverse agents.
 <p align="center">
- <img width="450px" src="docs/img/drware_3ag.mp4" align="center" alt="Diverse Multi-Robot Warehouse (RWARE) illustration" />
+ <img width="450px" src="docs/img/drware_3ag.gif" align="center" alt="Diverse Multi-Robot Warehouse (RWARE) illustration" />
 </p>
 
 README of the original RWARE repositiory is given below:
