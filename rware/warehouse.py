@@ -876,206 +876,6 @@ class Warehouse(gym.Env):
             assert agent.req_action == Action.FORWARD
             agent.req_action = Action.NOOP
 
-    def swap_conflict(self, agent_array, swap):
-
-        # if swapping agents are at the same location, there is no conflict
-        if agent_array[swap[0]].x==agent_array[swap[1]].x and agent_array[swap[0]].y==agent_array[swap[1]].y:
-            return False
-
-        # make sure two carriers or loaders are not on the same location
-        if agent_array[swap[0]].can_carry and not agent_array[swap[1]].can_carry:
-            # make sure there is no carrier at loader's location
-            if self.grid[_LAYER_AGENTS, agent_array[swap[1]].y, agent_array[swap[1]].x]:
-                # print(f'agent {swap[0]+1} is carrier and conflicts with carrier at location of loader {swap[1]+1}')
-                return True
-            # make sure there is no loader at carrier's location
-            if self.grid[_LAYER_LOADERS, agent_array[swap[0]].y, agent_array[swap[0]].x]:
-                # print(f'agent {swap[1]+1} is loader and conflicts with loader at location of agent {swap[0]+1}')
-                return True
-        # and vice vice versa
-        if agent_array[swap[1]].can_carry and not agent_array[swap[0]].can_carry:
-            # make sure there is no carrier at loader's location
-            if self.grid[_LAYER_AGENTS, agent_array[swap[0]].y, agent_array[swap[0]].x]:
-                # print(f'agent {swap[1]+1} is carrier and conflicts with carrier at location of loader {swap[0]+1}')
-                return True
-            # make sure there is no loader at carrier's location
-            if self.grid[_LAYER_LOADERS, agent_array[swap[1]].y, agent_array[swap[1]].x]:
-                # print(f'agent {swap[0]+1} is loader and conflicts with loader at location of agent {swap[1]+1}')
-                return True
-            
-        return False
-
-    def swap_players(self, swap, actions):
-        agents_array = deepcopy(self.agents)
-        actions_copy = list(copy(actions))
-
-        # if there is a swap conflict, skip the swap
-        if self.swap_conflict(agents_array, swap):
-            # print('conflict found')
-            return agents_array, actions_copy
-
-        # swap actions
-        actions_copy[swap[0]], actions_copy[swap[1]] = actions_copy[swap[1]], actions_copy[swap[0]] 
-
-        # swap agents characteristic that changes transitionally
-        agents_array[swap[0]].x, agents_array[swap[1]].x = agents_array[swap[1]].x, agents_array[swap[0]].x 
-        agents_array[swap[0]].y, agents_array[swap[1]].y = agents_array[swap[1]].y, agents_array[swap[0]].y 
-        agents_array[swap[0]].dir, agents_array[swap[1]].dir = agents_array[swap[1]].dir, agents_array[swap[0]].dir
-
-        # swap shelfs carried by agents
-        agents_array[swap[0]].carrying_shelf, agents_array[swap[1]].carrying_shelf = agents_array[swap[1]].carrying_shelf if agents_array[swap[0]].can_carry else None, agents_array[swap[0]].carrying_shelf if agents_array[swap[1]].can_carry else None
-
-        return agents_array, actions_copy
-
-    def reward_mapping_function(self, actions):
-        agents_array =  deepcopy(self.agents)
-        
-        reward_array = np.zeros((len(agents_array), len(agents_array)))
-
-        shelf_delivered = False
-        for y, x in self.goals:
-            shelf_id = self.grid[_LAYER_SHELFS, x, y]
-            if not shelf_id:
-                continue
-            shelf = self.shelfs[shelf_id - 1]
-            if shelf not in self.request_queue:
-                continue
-            shelf_delivered = True
-
-        agent_at_req_shelf = False
-        for shelf in self.request_queue:
-            agent_there = [agent.x==shelf.x and agent.y==shelf.y for agent in agents_array]
-            if any(agent_there):
-                agent_at_req_shelf = True
-
-        # # return zero reward when there is no chance of reward (to save compute)
-        if not shelf_delivered and not agent_at_req_shelf:
-            # print('skipped reward mapping')
-            return reward_array
-
-        # diagonal values of reward_array are default reward values
-        r_list = self.compute_rewards(agents_array, actions)
-        for i,r in enumerate(r_list):
-            reward_array[i,i] = r
-        
-        # combination of agents' trajecory sharing for reward mapping
-        swap_combs = combinations(list(range(len(agents_array))), 2)
-        for swap in swap_combs:
-            # print('swap:', swap[0]+1, swap[1]+1)
-            swapped_players, swapped_actions = self.swap_players(swap, actions)
-            r_list = self.compute_rewards(swapped_players, swapped_actions)
-            reward_array[swap[0], swap[1] ] = r_list[swap[0]]
-            reward_array[swap[1], swap[0] ] = r_list[swap[1]]
-            # print('rewards:', r_list[swap[0]], r_list[swap[1]])
-
-        return reward_array
-
-
-    def compute_rewards(self, agents_array, actions):
-
-        assert len(actions) == len(agents_array)
-
-        for agent, action in zip(agents_array, actions):
-            if self.msg_bits > 0:
-                agent.req_action = Action(action[0])
-                agent.message[:] = action[1:]
-            else:
-                agent.req_action = Action(action)
-
-        request_queue_ids = [s.id for s in self.request_queue]
-        # agents_array = deepcopy(self.agents)
-        grid_copy = deepcopy(self.grid)
-        shelfs_copy = deepcopy(self.shelfs)
-        self._recalc_dummy_grid(grid_copy, agents_array, shelfs_copy)
-
-        # agents that can_carry should not collide
-        carry_agents = [ agent for agent in agents_array if agent.can_carry ]
-        self.resolve_move_conflict(carry_agents, grid_copy, agents_array)
-
-        # # agents that can_load should not collide
-        # load_agents = [ agent for agent in agents_array if agent.can_load ]
-        # self.resolve_move_conflict(load_agents)
-
-        rewards = np.zeros( len(agents_array) )
-
-        for agent in agents_array:
-            agent.prev_x, agent.prev_y = agent.x, agent.y
-
-            if agent.req_action == Action.FORWARD:
-                if agent.carrying_shelf:
-                    shelf_id = grid_copy[_LAYER_SHELFS, agent.y, agent.x] 
-                agent.x, agent.y = agent.req_location(self.grid_size)
-                if agent.carrying_shelf:
-                    shelfs_copy[shelf_id-1].x, shelfs_copy[shelf_id-1].y = agent.x, agent.y
-            elif agent.req_action in [Action.LEFT, Action.RIGHT]:
-                agent.dir = agent.req_direction()
-            elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
-                shelf_id = grid_copy[_LAYER_SHELFS, agent.y, agent.x]
-                # loader_id = grid_copy[_LAYER_LOADERS, agent.y, agent.x]
-                loader_id = self.find_nearest_loader(grid_copy, agent.y, agent.x )
-                if shelf_id and (agent.can_load or loader_id):
-                    agent.carrying_shelf = shelfs_copy[shelf_id - 1]
-                    if shelfs_copy[shelf_id-1]:
-                        if agent.can_load and self.reward_type == RewardType.INDIVIDUAL:
-                            agent.carrying_shelf_loader = None
-                            # reward when requested shelf is loaded
-                            if shelf_id in request_queue_ids:
-                                rewards[agent.id - 1] += 0.5/self.request_queue_size
-                            # print('loaded on its own')
-                        elif loader_id and self.reward_type == RewardType.INDIVIDUAL:
-                            agent.carrying_shelf_loader = loader_id
-                            # reward when requested shelf is loaded
-                            if shelf_id in request_queue_ids:
-                                rewards[loader_id - 1] += 0.25/self.request_queue_size
-                                rewards[agent.id - 1] += 0.25/self.request_queue_size
-                            # print('loaded with loader {0}'.format(loader_id))
-                            
-            elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
-                shelf_id = grid_copy[_LAYER_SHELFS, agent.y, agent.x]
-                # loader_id = grid_copy[_LAYER_LOADERS, agent.y, agent.x]
-                loader_id = self.find_nearest_loader(grid_copy, agent.y, agent.x )
-                if not self._is_highway(agent.x, agent.y):
-                    if agent.can_load:
-                    # remove reward when requested shelf is unloaded
-                        if shelf_id in request_queue_ids:
-                            rewards[agent.id - 1] -= 0.5/self.request_queue_size
-                        agent.carrying_shelf = None
-                        # print('unloaded on its own')
-                    elif not agent.can_load and loader_id:
-                        # remove reward when requested shelf is unloaded
-                        if shelf_id in request_queue_ids:
-                            rewards[loader_id - 1] -= 0.25/self.request_queue_size
-                            rewards[agent.id - 1] -= 0.25/self.request_queue_size
-                        agent.carrying_shelf = None
-                        agent.carrying_shelf_loader = None
-                        # print('unloaded with loader {0}'.format(loader_id))
-                    if agent.has_delivered and self.reward_type == RewardType.TWO_STAGE:
-                        # rewards[agent.id - 1] += 0.5
-                        raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
-
-                    agent.has_delivered = False
-
-        self._recalc_dummy_grid(grid_copy, agents_array, shelfs_copy)
-
-        for y, x in self.goals:
-            shelf_id = grid_copy[_LAYER_SHELFS, x, y]
-            if not shelf_id:
-                continue
-            # shelf = shelfs_copy[shelf_id - 1]
-
-            if shelf_id not in request_queue_ids:
-                continue
-            if self.reward_type == RewardType.GLOBAL:
-                rewards += 1
-            elif self.reward_type == RewardType.INDIVIDUAL:
-                agent_id = grid_copy[_LAYER_AGENTS, x, y]
-                rewards[agent_id - 1] += 0.5/self.request_queue_size
-            elif self.reward_type == RewardType.TWO_STAGE:
-                raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
-
-
-        return list(rewards)
-    
     def find_nearest_loader(self, grid, row, col):
         # Define the boundaries of the 3x3 window
         start_row = max(row - 1, 0)
@@ -1106,10 +906,6 @@ class Warehouse(gym.Env):
         carry_agents = [ agent for agent in self.agents if agent.can_carry ]
         self.resolve_move_conflict(carry_agents, self.grid, self.agents)
 
-        # # agents that can_load should not collide
-        # load_agents = [ agent for agent in self.agents if agent.can_load ]
-        # self.resolve_move_conflict(load_agents)
-
         rewards = np.zeros(self.n_agents)
 
         for agent in self.agents:
@@ -1129,8 +925,6 @@ class Warehouse(gym.Env):
                     agent.carrying_shelf = self.shelfs[shelf_id - 1]
                     if self.shelfs[shelf_id-1]:
                         if agent.can_load and self.reward_type == RewardType.INDIVIDUAL:
-                            # agent.carrying_shelf_loader = None
-                            # reward when requested shelf is loaded
                             if self.shelfs[shelf_id-1] in self.request_queue:
                                 rewards[agent.id - 1] += 0.5/self.request_queue_size
                             # print('loaded on its own')
@@ -1159,8 +953,6 @@ class Warehouse(gym.Env):
                             rewards[loader_id - 1] -= 0.25/self.request_queue_size
                             rewards[agent.id - 1] -= 0.25/self.request_queue_size
                         agent.carrying_shelf = None
-                        # agent.carrying_shelf_loader = None
-                        # print('unloaded with loader {0}'.format(loader_id))
                     if agent.has_delivered and self.reward_type == RewardType.TWO_STAGE:
                         # rewards[agent.id - 1] += 0.5
                         raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
@@ -1179,36 +971,13 @@ class Warehouse(gym.Env):
 
             if shelf not in self.request_queue:
                 continue
-            # print('requested shelf in goal')
-            # a shelf was successfully delived.
             shelf_delivered = True
-            # # remove from queue and replace it
-            # new_request = np.random.choice(
-            #     list(set(self.shelfs) - set(self.request_queue))
-            # )
-            # self.request_queue[self.request_queue.index(shelf)] = new_request
-            # also reward the agents
             if self.reward_type == RewardType.GLOBAL:
                 rewards += 1
             elif self.reward_type == RewardType.INDIVIDUAL:
                 agent_id = self.grid[_LAYER_AGENTS, x, y]
                 rewards[agent_id - 1] += 0.5/self.request_queue_size
-                # # reward at the end when item is delivered 
-                # loader_id = self.agents[agent_id-1].carrying_shelf_loader
-                # if loader_id:
-                #     rewards[agent_id - 1] += 0.25
-                #     # rewards[loader_id - 1] += 0.25
-                #     # self.agents[agent_id-1].carrying_shelf_loader = None
-                #     # print('rewarded loader and carrier')
-                #     # print(rewards)
-                # else:
-                #     rewards[agent_id - 1] += 0.5
-                #     # print('rewarded carrier')
-                #     # print(rewards)
             elif self.reward_type == RewardType.TWO_STAGE:
-                # agent_id = self.grid[_LAYER_AGENTS, x, y]
-                # self.agents[agent_id - 1].has_delivered = True
-                # rewards[agent_id - 1] += 0.5
                 raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
 
             # unload shelf from the agent and remove it from environment
