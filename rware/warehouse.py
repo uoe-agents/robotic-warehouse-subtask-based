@@ -711,6 +711,10 @@ class Warehouse(gym.Env):
             for y, x, dir_ in zip(*agent_locs, agent_dirs)
         ]
 
+        # list of loaded shelf ids to avoid double reward to loaders for the same shelf
+        self.loaded_shelf_ids = []
+        
+        # list of removed shelf ids to refill the shelf locations when a shelf is delivered
         self.removed_shelf_ids = []
 
         self._set_agent_types()
@@ -858,6 +862,8 @@ class Warehouse(gym.Env):
          
         reward_array = np.zeros_like(self.subtasks_mask)
 
+        carrier_loaded_sheld_id = None
+
         for agent in self.agents:
 
             # subtask-reward allocation
@@ -870,7 +876,7 @@ class Warehouse(gym.Env):
                 agent.has_delivered = False
 
             # if loading agent has loaded in previous step, turn all subtask flag to false
-            if agent.has_loaded:
+            if agent.can_load and not agent.can_carry and agent.has_loaded:
                 agent.has_located = False
                 agent.has_collaborated = False
                 agent.has_loaded = False
@@ -881,7 +887,9 @@ class Warehouse(gym.Env):
                 if self.shelfs[shelf_id-1] in self.request_queue:
                     if agent.can_carry and not agent.can_load:
                         reward_array[agent.id - 1, 0] = 1/7
-                    else:
+                    elif agent.can_load and not agent.can_carry and shelf_id not in self.loaded_shelf_ids:
+                        reward_array[agent.id - 1, 0] = 1/5
+                    elif agent.can_carry and agent.can_load:
                         reward_array[agent.id - 1, 0] = 1/5
                     agent.has_located = True
                     print('located shelf')
@@ -892,9 +900,13 @@ class Warehouse(gym.Env):
                 if agent.can_load and not agent.can_carry:
                     # check if a carrier is in the same location
                     if self.grid[_LAYER_AGENTS, agent.y, agent.x]:
+                        shelf_id_there = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                         agent_id_there = self.grid[_LAYER_AGENTS, agent.y, agent.x]
                         agent_there = self.agents[agent_id_there - 1]
-                        if agent_there.can_carry and not agent_there.can_load:
+                        if (agent_there.can_carry and 
+                            not agent_there.can_load and 
+                            self.shelfs[shelf_id_there-1] in self.request_queue and
+                            shelf_id_there not in self.loaded_shelf_ids):
                             reward_array[agent.id - 1, 1] = 3/5
                             agent.has_collaborated = True
                             print('collaborated with carrier')
@@ -905,9 +917,12 @@ class Warehouse(gym.Env):
                 elif agent.can_carry and not agent.can_load:
                     # check if a loader is in the same location
                     if self.grid[_LAYER_LOADERS, agent.y, agent.x]:
+                        shelf_id_there = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                         loader_id_there = self.grid[_LAYER_LOADERS, agent.y, agent.x]
                         loader_there = self.agents[loader_id_there - 1]
-                        if loader_there.can_load and not loader_there.can_carry:
+                        if (loader_there.can_load and 
+                            not loader_there.can_carry
+                            and self.shelfs[shelf_id_there-1] in self.request_queue):
                             reward_array[agent.id - 1, 1] = 3/7
                             agent.has_collaborated = True
                             print('collaborated with loader')
@@ -932,6 +947,7 @@ class Warehouse(gym.Env):
                 if agent.has_collaborated and not agent.has_loaded and agent.carrying_shelf:
                     shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                     if self.shelfs[shelf_id-1] in self.request_queue:
+                        carrier_loaded_sheld_id = shelf_id  # remomber loaded shelf id by the carrier agent
                         reward_array[agent.id - 1, 2] = 5/7
                         agent.has_loaded = True
                         print('loaded with loader')
@@ -946,7 +962,12 @@ class Warehouse(gym.Env):
                         agent_id_there = self.grid[_LAYER_AGENTS, agent.y, agent.x]
                         agent_there = self.agents[agent_id_there - 1]
                         if agent_there.can_carry and not agent_there.can_load:
-                            if agent_there.carrying_shelf in self.request_queue:
+                            shelf_id_there = self.grid[_LAYER_SHELFS, agent.y, agent.x]
+                            print('not shelf_id_there:', shelf_id_there not in self.loaded_shelf_ids) 
+                            print('agent there with re shelf:', self.shelfs[shelf_id_there-1] in self.request_queue)
+                            if (agent_there.carrying_shelf and
+                                shelf_id_there not in self.loaded_shelf_ids and
+                                self.shelfs[shelf_id_there-1] in self.request_queue):
                                 reward_array[agent.id - 1, 2] = 1
                                 agent.has_loaded = True
                                 print('helped loading the carrier')
@@ -973,9 +994,15 @@ class Warehouse(gym.Env):
                     self.request_queue.remove(self.shelfs[shelf_id-1])
                     self.removed_shelf_ids.append(shelf_id)
                     self.shelfs[shelf_id-1].id = 0
+                    if agent.can_carry and not agent.can_load:
+                        self.loaded_shelf_ids.remove(shelf_id)
                     
             self._recalc_grid()
 
+        # record loaded shelf id by the carrier agent to avoid double reward for loader agent for the same shelf      
+        if carrier_loaded_sheld_id:      
+            self.loaded_shelf_ids.append(carrier_loaded_sheld_id) 
+            
         # rewards are halved for the agents that only can_carry and can_load (to make sure each item delivery receives a reward of 1)
         for i,agent in enumerate(self.agents):
             if agent.can_carry and not agent.can_load:
