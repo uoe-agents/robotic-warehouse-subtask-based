@@ -81,6 +81,9 @@ class Agent(Entity):
         self.carrying_shelf: Optional[Shelf] = None
         self.carrying_shelf_loader = None
         self.canceled_action = None
+        self.has_located = False
+        self.has_collaborated = False
+        self.has_loaded = False
         self.has_delivered = False
         self.can_load = None
         self.can_carry = None

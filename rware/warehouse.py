@@ -174,22 +174,26 @@ class Warehouse(gym.Env):
 
         self.renderer = None
 
-        # make subtasks mask matrix for agents of the size n_agents x n_subtasks(3)
-        # sutask 1: going to a requested shelf location
-        # subtask 2: then, load the requested shelf
-        # subtask 3: finally, deliver the shelf to the goal location
-        # subtask 4: for loader agents, help load a carrier agent
-        # subtask 5: remove subtask 1 reward when it doesn't lead to subtask 2
-        # subtask 6: remove subtask 2 reward when it doesn't lead to subtask 3
+        self._make_subtasks_mask()
 
-        self.subtasks_mask = np.zeros((self.n_agents, 6))
+
+    def _make_subtasks_mask(self):
+
+        # make subtasks mask matrix for agents of the size n_agents x n_subtasks(3)
+        # subtask 1: locating - go to a requested shelf
+        # subtask 2: colaborating - check if a loader (for carrier agents) or a carrier (for loader agents) is in the same location
+        # subtask 3: loading - load a requested shelf (either independently or colaboratively)
+        # subtask 4: delivery - deliver a shelf to the goal location
+        # subtask 5: removing subtask rewards when next subtask is done (to avoid incomplete task behaviours)
+
+        self.subtasks_mask = np.zeros((self.n_agents, 5))
         for i,agent_type in enumerate(self.agent_type):
             if agent_type=='c':
-                self.subtasks_mask[i,:] = [1, 1, 1, 0, 1, 1]
+                self.subtasks_mask[i,:] = [1, 1, 1, 1, 1]
             elif agent_type=='l':
-                self.subtasks_mask[i,:] = [1, 0, 0, 1, 1, 0]
+                self.subtasks_mask[i,:] = [1, 1, 1, 0, 1]
             else:
-                self.subtasks_mask[i,:] = [1, 1, 1, 0, 1, 1]
+                self.subtasks_mask[i,:] = [1, 0, 1, 1, 1]
 
 
     def _make_layout_from_params(self, shelf_columns, shelf_rows, column_height):
@@ -329,6 +333,10 @@ class Warehouse(gym.Env):
                                             "location": location_space,
                                             "can_carry": spaces.MultiBinary(1),
                                             "can_load": spaces.MultiBinary(1),
+                                            "has_located": spaces.MultiBinary(1),
+                                            "has_collaborated" : spaces.MultiBinary(1),
+                                            "has_loaded": spaces.MultiBinary(1),
+                                            "has_delivered": spaces.MultiBinary(1),
                                             "carrying_shelf": spaces.MultiBinary(1),
                                             "direction": spaces.Discrete(4),
                                             "on_highway": spaces.MultiBinary(1),
@@ -523,7 +531,14 @@ class Warehouse(gym.Env):
                 agent_x = agent.x
                 agent_y = agent.y
 
-            obs.write([agent_x, agent_y, int(agent.can_carry), int(agent.can_load) ,int(agent.carrying_shelf is not None)])
+            obs.write([agent_x, agent_y, 
+                       int(agent.can_carry), 
+                       int(agent.can_load), 
+                       int(agent.has_located), 
+                       int(agent.has_collaborated), 
+                       int(agent.has_loaded), 
+                       int(agent.has_delivered) ,
+                       int(agent.carrying_shelf is not None)])
             direction = np.zeros(4)
             direction[agent.dir.value] = 1.0
             obs.write(direction)
@@ -574,6 +589,10 @@ class Warehouse(gym.Env):
             "location": np.array([agent_x, agent_y]),
             "can_carry": [int(agent.can_carry)],
             "can_load": [int(agent.can_load)],
+            "has_located": [int(agent.has_located)],
+            "has_collaborated": [int(agent.has_collaborated)],
+            "has_loaded": [int(agent.has_loaded)],
+            "has_delivered": [int(agent.has_delivered)],
             "carrying_shelf": [int(agent.carrying_shelf is not None)],
             "direction": agent.dir.value,
             "on_highway": [int(self._is_highway(agent.x, agent.y))],
@@ -786,6 +805,191 @@ class Warehouse(gym.Env):
                 if grid[_LAYER_LOADERS,i, j] != 0:
                     return grid[_LAYER_LOADERS,i,j]
         return None
+    
+    def transition_function(self):
+
+        for agent in self.agents:
+            agent.prev_x, agent.prev_y = agent.x, agent.y
+
+            if agent.req_action == Action.FORWARD:
+                agent.x, agent.y = agent.req_location(self.grid_size)
+                if agent.carrying_shelf:
+                    agent.carrying_shelf.x, agent.carrying_shelf.y = agent.x, agent.y
+            elif agent.req_action in [Action.LEFT, Action.RIGHT]:
+                agent.dir = agent.req_direction()
+            elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
+                shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
+                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                # loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
+                if shelf_id and (agent.can_load or loader_id):
+                    agent.carrying_shelf = self.shelfs[shelf_id - 1]
+                            
+            elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
+                shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
+                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                # loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
+                if not self._is_highway(agent.x, agent.y):
+                    if agent.can_load:
+                        agent.carrying_shelf = None
+                        # print('unloaded on its own')
+                    elif not agent.can_load and loader_id:
+                        agent.carrying_shelf = None
+                    if agent.has_delivered and self.reward_type == RewardType.TWO_STAGE:
+                        # rewards[agent.id - 1] += 0.5
+                        raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
+
+            self._recalc_grid()
+
+    def reward_function(self):
+
+        # create reward subtask array
+        # subtask 1: locating - go to a requested shelf
+        # subtask 2: colaborating - check if a loader (for carrier agents) or a carrier (for loader agents) is in the same location
+        # subtask 3: loading - load a requested shelf (either independently or colaboratively)
+        # subtask 4: delivery - deliver a shelf to the goal location
+        # subtask 5: removing subtask rewards when next subtask is done (to avoid incomplete task behaviours)
+        #
+        # reward array:
+        #           [subtask 1, subtask 2, subtask 3, subtask 4, subtask 5]
+        # agent c:  [      1/7,       3/7,       5/7,         1,        0]     x 1/2
+        # agent l:  [      1/5,       3/5,       5/5,         0,        0]     x 1/2
+        # agent cl: [      1/5,        0,        3/5,       5/5,        0]
+        # :                  :         :         :         :         :
+         
+        reward_array = np.zeros_like(self.subtasks_mask)
+
+        for agent in self.agents:
+
+            # subtask-reward allocation
+            
+            # if carrying agent has delivered in previous step, turn all subtask flag to false
+            if agent.has_delivered:
+                agent.has_located = False
+                agent.has_collaborated = False
+                agent.has_loaded = False
+                agent.has_delivered = False
+
+            # if loading agent has loaded in previous step, turn all subtask flag to false
+            if agent.has_loaded:
+                agent.has_located = False
+                agent.has_collaborated = False
+                agent.has_loaded = False
+                
+            # subtask 1: locating - go to a requested shelf
+            if not agent.has_located and not agent.carrying_shelf:
+                shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
+                if self.shelfs[shelf_id-1] in self.request_queue:
+                    if agent.can_carry and not agent.can_load:
+                        reward_array[agent.id - 1, 0] = 1/7
+                    else:
+                        reward_array[agent.id - 1, 0] = 1/5
+                    agent.has_located = True
+                    print('located shelf')
+            
+            # subtask 2: colaborating - check if a loader (for carrier agents) or a carrier (for loader agents) is in the same location 
+            if agent.has_located and not agent.has_collaborated and not agent.carrying_shelf:
+                # if agent is a loader 
+                if agent.can_load and not agent.can_carry:
+                    # check if a carrier is in the same location
+                    if self.grid[_LAYER_AGENTS, agent.y, agent.x]:
+                        agent_id_there = self.grid[_LAYER_AGENTS, agent.y, agent.x]
+                        agent_there = self.agents[agent_id_there - 1]
+                        if agent_there.can_carry and not agent_there.can_load:
+                            reward_array[agent.id - 1, 1] = 3/5
+                            agent.has_collaborated = True
+                            print('collaborated with carrier')
+                            # remove reward from agent when it located the shelf (subtask 5)
+                            reward_array[agent.id - 1, 4] = -1/5
+                            print('removed reward from agent when it located the shelf after colaborating')
+                # if agent is a carrier
+                elif agent.can_carry and not agent.can_load:
+                    # check if a loader is in the same location
+                    if self.grid[_LAYER_LOADERS, agent.y, agent.x]:
+                        loader_id_there = self.grid[_LAYER_LOADERS, agent.y, agent.x]
+                        loader_there = self.agents[loader_id_there - 1]
+                        if loader_there.can_load and not loader_there.can_carry:
+                            reward_array[agent.id - 1, 1] = 3/7
+                            agent.has_collaborated = True
+                            print('collaborated with loader')
+                            # remove reward from agent when it located the shelf (subtask 5)
+                            reward_array[agent.id - 1, 4] = -1/7
+                            print('removed reward from agent when it located the shelf after colaborating')
+
+            # subtask 3: loading - load a requested shelf (either independently or colaboratively)              
+            # if agent can load independently
+            if agent.can_load and agent.can_carry:
+                if agent.has_located and not agent.has_loaded and agent.carrying_shelf:
+                    shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
+                    if self.shelfs[shelf_id-1] in self.request_queue:
+                        reward_array[agent.id - 1, 2] = 3/5
+                        agent.has_loaded = True
+                        print('loaded on its own')
+                        # remove reward from agent when it located the requested shelf (subtask 5)
+                        reward_array[agent.id - 1, 4] = -1/5
+                        print('removed reward from agent when it located the shelf after loading')
+            # if agent can load collaboratively (carrier agents only)
+            if not agent.can_load and agent.can_carry:
+                if agent.has_collaborated and not agent.has_loaded and agent.carrying_shelf:
+                    shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
+                    if self.shelfs[shelf_id-1] in self.request_queue:
+                        reward_array[agent.id - 1, 2] = 5/7
+                        agent.has_loaded = True
+                        print('loaded with loader')
+                        # remove reward from agent when it collaborated (subtask 5)
+                        reward_array[agent.id - 1, 4] = -3/7
+                        print('removed reward from agent when it collaborated')
+            # if loader agent successfully colaborated in loading the carrier agent
+            if agent.can_load and not agent.can_carry:
+                if agent.has_collaborated and not agent.has_loaded:
+                    # check if a carrier is in the same location
+                    if self.grid[_LAYER_AGENTS, agent.y, agent.x]:
+                        agent_id_there = self.grid[_LAYER_AGENTS, agent.y, agent.x]
+                        agent_there = self.agents[agent_id_there - 1]
+                        if agent_there.can_carry and not agent_there.can_load:
+                            if agent_there.carrying_shelf in self.request_queue:
+                                reward_array[agent.id - 1, 2] = 1
+                                agent.has_loaded = True
+                                print('helped loading the carrier')
+                                # remove reward from agent when it collaborated (subtask 5)
+                                reward_array[agent.id - 1, 4] = -3/5
+                                print('removed reward from agent when it collaborated')
+
+            # subtask 4: delivery - deliver a shelf to the goal location
+            if agent.has_loaded and not agent.has_delivered and agent.carrying_shelf:
+                # check if the agent is in the goals location
+                if (agent.x, agent.y) in self.goals:
+                    reward_array[agent.id - 1, 3] = 1
+                    agent.has_delivered = True
+                    print('delivered shelf')
+                    # remove reward from agent when it loaded the shelf (subtask 5)
+                    if agent.can_carry and not agent.can_load:
+                        reward_array[agent.id - 1, 4] = -5/7
+                    else:
+                        reward_array[agent.id - 1, 4] = -3/5
+                    print('removed reward from agent when it loaded the shelf after delivering')
+                    # replace delivered shelf from environment and refill request queue
+                    shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
+                    agent.carrying_shelf = None
+                    self.request_queue.remove(self.shelfs[shelf_id-1])
+                    self.removed_shelf_ids.append(shelf_id)
+                    self.shelfs[shelf_id-1].id = 0
+                    
+            self._recalc_grid()
+
+        # rewards are halved for the agents that only can_carry and can_load (to make sure each item delivery receives a reward of 1)
+        for i,agent in enumerate(self.agents):
+            if agent.can_carry and not agent.can_load:
+                reward_array[i] = reward_array[i] * 1/2
+            if not agent.can_carry and agent.can_load:
+                reward_array[i] = reward_array[i] * 1/2
+            
+        # reward vector is obtained by point-wise product of reward_array and subtasks_mask, and then summing over the subtasks
+        rewards_vector = np.zeros(self.n_agents)
+        for i in range(self.n_agents):
+            rewards_vector[i] = np.sum(reward_array[i] * self.subtasks_mask[i])
+
+        return rewards_vector, reward_array
+
 
     def step(
         self, actions: List[Action]
@@ -803,105 +1007,21 @@ class Warehouse(gym.Env):
         carry_agents = [ agent for agent in self.agents if agent.can_carry ]
         self.resolve_move_conflict(carry_agents, self.grid, self.agents)
 
-        rewards = np.zeros(self.n_agents)
+        # transition function
+        self.transition_function()
 
-        for agent in self.agents:
-            agent.prev_x, agent.prev_y = agent.x, agent.y
+        # reward function (subtasks reward allocation)
+        rewards, reward_array = self.reward_function()
 
-            if agent.req_action == Action.FORWARD:
-                agent.x, agent.y = agent.req_location(self.grid_size)
-                if agent.carrying_shelf:
-                    agent.carrying_shelf.x, agent.carrying_shelf.y = agent.x, agent.y
-            elif agent.req_action in [Action.LEFT, Action.RIGHT]:
-                agent.dir = agent.req_direction()
-            elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
-                shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
-                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
-                # loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
-                if shelf_id and (agent.can_load or loader_id):
-                    agent.carrying_shelf = self.shelfs[shelf_id - 1]
-                    if self.shelfs[shelf_id-1]:
-                        if agent.can_load and self.reward_type == RewardType.INDIVIDUAL:
-                            if self.shelfs[shelf_id-1] in self.request_queue:
-                                rewards[agent.id - 1] += 0.5
-                            # print('loaded on its own')
-                        elif loader_id and self.reward_type == RewardType.INDIVIDUAL:
-                            # agent.carrying_shelf_loader = loader_id
-                            # reward when requested shelf is loaded
-                            if self.shelfs[shelf_id-1] in self.request_queue:
-                                rewards[loader_id - 1] += 0.25
-                                rewards[agent.id - 1] += 0.25
-                            # print('loaded with loader {0}'.format(loader_id))
-                            
-            elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
-                shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
-                loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
-                # loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
-                if not self._is_highway(agent.x, agent.y):
-                    if agent.can_load:
-                    # remove reward when requested shelf is unloaded
-                        if self.shelfs[shelf_id-1] in self.request_queue:
-                            rewards[agent.id - 1] -= 0.5
-                        agent.carrying_shelf = None
-                        # print('unloaded on its own')
-                    elif not agent.can_load and loader_id:
-                        # remove reward when requested shelf is unloaded
-                        if self.shelfs[shelf_id-1] in self.request_queue:
-                            rewards[loader_id - 1] -= 0.25
-                            rewards[agent.id - 1] -= 0.25
-                        agent.carrying_shelf = None
-                    if agent.has_delivered and self.reward_type == RewardType.TWO_STAGE:
-                        # rewards[agent.id - 1] += 0.5
-                        raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
-
-                    agent.has_delivered = False
-
-        self._recalc_grid()
-
-        shelf_delivered = False
-        for y, x in self.goals:
-            shelf_id = self.grid[_LAYER_SHELFS, x, y]
-            if not shelf_id:
-                continue
-            # print('shelf in goal')
-            shelf = self.shelfs[shelf_id - 1]
-
-            if shelf not in self.request_queue:
-                continue
-            shelf_delivered = True
-            if self.reward_type == RewardType.GLOBAL:
-                rewards += 1
-            elif self.reward_type == RewardType.INDIVIDUAL:
-                agent_id = self.grid[_LAYER_AGENTS, x, y]
-                rewards[agent_id - 1] += 0.5
-            elif self.reward_type == RewardType.TWO_STAGE:
-                raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
-
-            # unload shelf from the agent and remove it from environment
-            agent_id = self.grid[_LAYER_AGENTS, x, y]
-            self.agents[agent_id-1].carrying_shelf=None
-            self.grid[_LAYER_SHELFS, x, y] = 0
-            self.request_queue.remove(shelf)
-            self.removed_shelf_ids.append(shelf.id)
-            self.shelfs[shelf_id-1].id = 0
-            self._recalc_grid()
-
-        if shelf_delivered:
-            self._cur_inactive_steps = 0
-        else:
-            self._cur_inactive_steps += 1
-        self._cur_steps += 1
-
-        if (
-            self.max_inactivity_steps
-            and self._cur_inactive_steps >= self.max_inactivity_steps
-        ) or (self.max_steps and self._cur_steps >= self.max_steps) or (len(self.request_queue)==0):
+        if (self.max_steps and self._cur_steps >= self.max_steps) or (len(self.request_queue)==0):
             dones = self.n_agents * [True]
         else:
             dones = self.n_agents * [False]
 
         new_obs = tuple([self._make_obs(agent) for agent in self.agents])
         info = {}
+        info['reward_subtask_array'] = reward_array
+
         return new_obs, list(rewards), dones, info
 
     def render(self, mode="human"):
@@ -926,8 +1046,6 @@ if __name__ == "__main__":
     from tqdm import tqdm
 
     time.sleep(2)
-    # env.render()
-    # env.step(18 * [Action.LOAD] + 2 * [Action.NOOP])
 
     for _ in tqdm(range(1000000)):
         # time.sleep(2)
