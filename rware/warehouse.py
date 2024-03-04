@@ -717,6 +717,9 @@ class Warehouse(gym.Env):
         # list of removed shelf ids to refill the shelf locations when a shelf is delivered
         self.removed_shelf_ids = []
 
+        # store number of delivered shelfs
+        self.delivered_shelfs = 0
+
         self._set_agent_types()
 
         self._recalc_grid()
@@ -838,6 +841,9 @@ class Warehouse(gym.Env):
                         # print('unloaded on its own')
                     elif not agent.can_load and loader_id:
                         agent.carrying_shelf = None
+                        # if this shelf is requested, remove it from loaded shelf ids
+                        if shelf_id in self.loaded_shelf_ids:
+                            self.loaded_shelf_ids.remove(shelf_id)
                     if agent.has_delivered and self.reward_type == RewardType.TWO_STAGE:
                         # rewards[agent.id - 1] += 0.5
                         raise NotImplementedError('TWO_STAGE reward not implemenred for diverse rware')
@@ -855,10 +861,10 @@ class Warehouse(gym.Env):
         #
         # reward array:
         #           [subtask 1, subtask 2, subtask 3, subtask 4, subtask 5]
-        # agent c:  [      1/7,       3/7,       5/7,         1,        0]     x 1/2
-        # agent l:  [      1/5,       3/5,       5/5,         0,        0]     x 1/2
-        # agent cl: [      1/5,        0,        3/5,       5/5,        0]
-        # :                  :         :         :         :         :
+        # agent c:  [    1/100,     2/100,      3/100,        1,        0]     
+        # agent l:  [    1/100,     2/100,      3/100,        0,        0]   
+        # agent cl: [    1/100,         0,      2/100,        1,        0]
+        # :                  :         :         :            :         :
          
         reward_array = np.zeros_like(self.subtasks_mask)
 
@@ -886,11 +892,11 @@ class Warehouse(gym.Env):
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                 if self.shelfs[shelf_id-1] in self.request_queue:
                     if agent.can_carry and not agent.can_load:
-                        reward_array[agent.id - 1, 0] = 1/7
+                        reward_array[agent.id - 1, 0] = 1/100
                     elif agent.can_load and not agent.can_carry and shelf_id not in self.loaded_shelf_ids:
-                        reward_array[agent.id - 1, 0] = 1/5
+                        reward_array[agent.id - 1, 0] = 1/100
                     elif agent.can_carry and agent.can_load:
-                        reward_array[agent.id - 1, 0] = 1/5
+                        reward_array[agent.id - 1, 0] = 1/100
                     agent.has_located = True
                     # print('located shelf')
             
@@ -907,11 +913,11 @@ class Warehouse(gym.Env):
                             not agent_there.can_load and 
                             self.shelfs[shelf_id_there-1] in self.request_queue and
                             shelf_id_there not in self.loaded_shelf_ids):
-                            reward_array[agent.id - 1, 1] = 3/5
+                            reward_array[agent.id - 1, 1] = 2/100
                             agent.has_collaborated = True
                             # print('collaborated with carrier')
                             # remove reward from agent when it located the shelf (subtask 5)
-                            reward_array[agent.id - 1, 4] = -1/5
+                            reward_array[agent.id - 1, 4] = -1/100
                             # print('removed reward from agent when it located the shelf after colaborating')
                 # if agent is a carrier
                 elif agent.can_carry and not agent.can_load:
@@ -923,11 +929,11 @@ class Warehouse(gym.Env):
                         if (loader_there.can_load and 
                             not loader_there.can_carry
                             and self.shelfs[shelf_id_there-1] in self.request_queue):
-                            reward_array[agent.id - 1, 1] = 3/7
+                            reward_array[agent.id - 1, 1] = 2/100
                             agent.has_collaborated = True
                             # print('collaborated with loader')
                             # remove reward from agent when it located the shelf (subtask 5)
-                            reward_array[agent.id - 1, 4] = -1/7
+                            reward_array[agent.id - 1, 4] = -1/100
                             # print('removed reward from agent when it located the shelf after colaborating')
 
             # subtask 3: loading - load a requested shelf (either independently or colaboratively)              
@@ -936,11 +942,11 @@ class Warehouse(gym.Env):
                 if agent.has_located and not agent.has_loaded and agent.carrying_shelf:
                     shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                     if self.shelfs[shelf_id-1] in self.request_queue:
-                        reward_array[agent.id - 1, 2] = 3/5
+                        reward_array[agent.id - 1, 2] = 3/100
                         agent.has_loaded = True
                         # print('loaded on its own')
                         # remove reward from agent when it located the requested shelf (subtask 5)
-                        reward_array[agent.id - 1, 4] = -1/5
+                        reward_array[agent.id - 1, 4] = -1/100
                         # print('removed reward from agent when it located the shelf after loading')
             # if agent can load collaboratively (carrier agents only)
             if not agent.can_load and agent.can_carry:
@@ -948,11 +954,11 @@ class Warehouse(gym.Env):
                     shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                     if self.shelfs[shelf_id-1] in self.request_queue:
                         carrier_loaded_sheld_id = shelf_id  # remomber loaded shelf id by the carrier agent
-                        reward_array[agent.id - 1, 2] = 5/7
+                        reward_array[agent.id - 1, 2] = 3/100
                         agent.has_loaded = True
                         # print('loaded with loader')
                         # remove reward from agent when it collaborated (subtask 5)
-                        reward_array[agent.id - 1, 4] = -3/7
+                        reward_array[agent.id - 1, 4] = -2/100
                         # print('removed reward from agent when it collaborated')
             # if loader agent successfully colaborated in loading the carrier agent
             if agent.can_load and not agent.can_carry:
@@ -966,11 +972,11 @@ class Warehouse(gym.Env):
                             if (agent_there.carrying_shelf and
                                 shelf_id_there not in self.loaded_shelf_ids and
                                 self.shelfs[shelf_id_there-1] in self.request_queue):
-                                reward_array[agent.id - 1, 2] = 1
+                                reward_array[agent.id - 1, 2] = 3/100
                                 agent.has_loaded = True
                                 # print('helped loading the carrier')
                                 # remove reward from agent when it collaborated (subtask 5)
-                                reward_array[agent.id - 1, 4] = -3/5
+                                reward_array[agent.id - 1, 4] = -2/100
                                 # print('removed reward from agent when it collaborated')
 
             # subtask 4: delivery - deliver a shelf to the goal location
@@ -983,11 +989,10 @@ class Warehouse(gym.Env):
                         reward_array[agent.id - 1, 3] = 1
                         agent.has_delivered = True
                         # print('delivered shelf')
+                        # store number of delivered shelfs
+                        self.delivered_shelfs += 1
                         # remove reward from agent when it loaded the shelf (subtask 5)
-                        if agent.can_carry and not agent.can_load:
-                            reward_array[agent.id - 1, 4] = -5/7
-                        else:
-                            reward_array[agent.id - 1, 4] = -3/5
+                        reward_array[agent.id - 1, 4] = -3/100
                         # print('removed reward from agent when it loaded the shelf after delivering')
                         # replace delivered shelf from environment and refill request queue
                         agent.carrying_shelf = None
@@ -995,7 +1000,8 @@ class Warehouse(gym.Env):
                         self.removed_shelf_ids.append(shelf_id)
                         self.shelfs[shelf_id-1].id = 0
                         if agent.can_carry and not agent.can_load:
-                            self.loaded_shelf_ids.remove(shelf_id)
+                            if shelf_id in self.loaded_shelf_ids:
+                                self.loaded_shelf_ids.remove(shelf_id)
                     
             self._recalc_grid()
 
@@ -1003,12 +1009,10 @@ class Warehouse(gym.Env):
         if carrier_loaded_sheld_id:      
             self.loaded_shelf_ids.append(carrier_loaded_sheld_id) 
             
-        # rewards are halved for the agents that only can_carry and can_load (to make sure each item delivery receives a reward of 1)
-        for i,agent in enumerate(self.agents):
-            if agent.can_carry and not agent.can_load:
-                reward_array[i] = reward_array[i] * 1/2
-            if not agent.can_carry and agent.can_load:
-                reward_array[i] = reward_array[i] * 1/2
+        # # rewards of loaders are reduced to its 1/10th to because it doesn't directly deliver the shelf
+        # for i,agent in enumerate(self.agents):
+        #     if not agent.can_carry and agent.can_load:
+        #         reward_array[i] = reward_array[i] * 1/10
             
         # reward vector is obtained by point-wise product of reward_array and subtasks_mask, and then summing over the subtasks
         rewards_vector = np.zeros(self.n_agents)
