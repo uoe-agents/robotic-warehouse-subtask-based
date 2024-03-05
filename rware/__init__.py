@@ -30,7 +30,7 @@ for size, items, agents, div in _perms:
             "sensor_range": 1,
             "request_queue_size": items,
             "max_inactivity_steps": None,
-            "max_steps": 20000,
+            "max_steps": 500,
             "reward_type": RewardType.INDIVIDUAL,
         },
     )
