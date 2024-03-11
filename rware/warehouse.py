@@ -212,15 +212,23 @@ class Warehouse(gym.Env):
 
         self.highways = np.zeros(self.grid_size, dtype=np.int32)
 
-        highway_func = lambda x, y: (
-            (x % 3 == 0)  # vertical highways
-            or (y % (self.column_height + 1) == 0)  # horizontal highways
-            or (y == self.grid_size[0] - 1)  # delivery row
-            or (  # remove a box for queuing
-                (y > self.grid_size[0] - (self.column_height + 3))
-                and ((x == self.grid_size[1] // 2 - 1) or (x == self.grid_size[1] // 2))
+        if shelf_columns == 1 and shelf_rows == 1:
+            highway_func = lambda x, y: (
+                (x % 3 == 0)  # vertical highways
+                or (y % (self.column_height + 1) == 0)  # horizontal highways
+                or (y == self.grid_size[0] - 1)  # delivery row
             )
-        )
+        else:
+            highway_func = lambda x, y: (
+                (x % 3 == 0)  # vertical highways
+                or (y % (self.column_height + 1) == 0)  # horizontal highways
+                or (y == self.grid_size[0] - 1)  # delivery row
+                or (  # remove a box for queuing
+                    (y > self.grid_size[0] - (self.column_height + 3))
+                    and ((x == self.grid_size[1] // 2 - 1) or (x == self.grid_size[1] // 2))
+                )
+            )
+
         for x in range(self.grid_size[1]):
             for y in range(self.grid_size[0]):
                 self.highways[y, x] = highway_func(x, y)
@@ -656,6 +664,8 @@ class Warehouse(gym.Env):
                     s.x, s.y = empty_shelf_locations.pop()
                     # add a new random shelf to request queue but not repeating the same shelf in the queue
                     eligible_shelfs = [shelf for shelf in self.shelfs if shelf not in self.request_queue]
+                    # remove the shelfs which are carried by the agents
+                    eligible_shelfs = [shelf for shelf in eligible_shelfs if shelf not in [agent.carrying_shelf for agent in self.agents if agent.carrying_shelf is not None]]
                     self.request_queue.append(np.random.choice(eligible_shelfs))
 
     def find_empty_shelf_locations(self):
@@ -712,6 +722,7 @@ class Warehouse(gym.Env):
         ]
 
         # list of loaded shelf ids to avoid double reward to loaders for the same shelf
+        self.carrier_loaded_shelf_id = None
         self.loaded_shelf_ids = []
         
         # list of removed shelf ids to refill the shelf locations when a shelf is delivered
@@ -817,20 +828,25 @@ class Warehouse(gym.Env):
 
         for agent in self.agents:
             agent.prev_x, agent.prev_y = agent.x, agent.y
-
+            # forward movement
             if agent.req_action == Action.FORWARD:
                 agent.x, agent.y = agent.req_location(self.grid_size)
                 if agent.carrying_shelf:
                     agent.carrying_shelf.x, agent.carrying_shelf.y = agent.x, agent.y
+            # turning
             elif agent.req_action in [Action.LEFT, Action.RIGHT]:
                 agent.dir = agent.req_direction()
+            # loading
             elif agent.req_action == Action.TOGGLE_LOAD and not agent.carrying_shelf and agent.can_carry:
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                 loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
                 # loader_id = self.find_nearest_loader(self.grid, agent.y, agent.x )
                 if shelf_id and (agent.can_load or loader_id):
                     agent.carrying_shelf = self.shelfs[shelf_id - 1]
-                            
+                    # if this shelf is requested, add it to loaded shelf ids (to avoid double reward to loaders)
+                    if self.shelfs[shelf_id - 1] in self.request_queue:
+                        self.carrier_loaded_shelf_id = shelf_id
+            # unloading                
             elif agent.req_action == Action.TOGGLE_LOAD and agent.carrying_shelf:
                 shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                 loader_id = self.grid[_LAYER_LOADERS, agent.y, agent.x]
@@ -867,8 +883,6 @@ class Warehouse(gym.Env):
         # :                  :         :         :            :         :
          
         reward_array = np.zeros_like(self.subtasks_mask)
-
-        carrier_loaded_sheld_id = None
 
         for agent in self.agents:
 
@@ -939,7 +953,7 @@ class Warehouse(gym.Env):
             # subtask 3: loading - load a requested shelf (either independently or colaboratively)              
             # if agent can load independently
             if agent.can_load and agent.can_carry:
-                if agent.has_located and not agent.has_loaded and agent.carrying_shelf:
+                if agent.has_located and not agent.has_loaded and agent.carrying_shelf is not None:
                     shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                     if self.shelfs[shelf_id-1] in self.request_queue:
                         reward_array[agent.id - 1, 2] = 3/100
@@ -950,10 +964,9 @@ class Warehouse(gym.Env):
                         # print('removed reward from agent when it located the shelf after loading')
             # if agent can load collaboratively (carrier agents only)
             if not agent.can_load and agent.can_carry:
-                if agent.has_collaborated and not agent.has_loaded and agent.carrying_shelf:
+                if agent.has_collaborated and not agent.has_loaded and agent.carrying_shelf is not None:
                     shelf_id = self.grid[_LAYER_SHELFS, agent.y, agent.x]
                     if self.shelfs[shelf_id-1] in self.request_queue:
-                        carrier_loaded_sheld_id = shelf_id  # remomber loaded shelf id by the carrier agent
                         reward_array[agent.id - 1, 2] = 3/100
                         agent.has_loaded = True
                         # print('loaded with loader')
@@ -1006,8 +1019,8 @@ class Warehouse(gym.Env):
             self._recalc_grid()
 
         # record loaded shelf id by the carrier agent to avoid double reward for loader agent for the same shelf      
-        if carrier_loaded_sheld_id:      
-            self.loaded_shelf_ids.append(carrier_loaded_sheld_id) 
+        if self.carrier_loaded_shelf_id is not None:  
+            self.loaded_shelf_ids.append(self.carrier_loaded_shelf_id) 
             
         # # rewards of loaders are reduced to its 1/10th to because it doesn't directly deliver the shelf
         # for i,agent in enumerate(self.agents):
@@ -1018,6 +1031,15 @@ class Warehouse(gym.Env):
         rewards_vector = np.zeros(self.n_agents)
         for i in range(self.n_agents):
             rewards_vector[i] = np.sum(reward_array[i] * self.subtasks_mask[i])
+
+        # # show error if a carrier agent is carrying a shelf but it is not in loaded shelf ids
+        # for agent in self.agents:
+        #     if (agent.can_carry 
+        #         and not agent.can_load 
+        #         and agent.carrying_shelf is not None 
+        #         and agent.carrying_shelf in self.request_queue
+        #         and agent.carrying_shelf.id not in self.loaded_shelf_ids):
+        #         raise ValueError('carrier agent {} is carrying shelf {} but it is not in loaded shelf id : {}'.format(agent.id, agent.carrying_shelf.id, self.loaded_shelf_ids))
 
         return rewards_vector, reward_array
 

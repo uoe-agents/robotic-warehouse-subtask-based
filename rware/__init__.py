@@ -3,6 +3,7 @@ from .warehouse import Warehouse, RewardType, Action, ObserationType
 import itertools
 
 _sizes = {
+    "single": (1, 1),
     "tiny": (1, 3),
     "small": (2, 3),
     "medium": (2, 5),
@@ -21,7 +22,7 @@ for size, items, agents, div in _perms:
         id=f"rware-{size}-{agents}ag{div}-{items}it-v1",
         entry_point="rware.warehouse:Warehouse",
         kwargs={
-            "column_height": 8,
+            "column_height": 5,
             "shelf_rows": _sizes[size][0],
             "shelf_columns": _sizes[size][1],
             "n_agents": agents,
@@ -30,7 +31,7 @@ for size, items, agents, div in _perms:
             "sensor_range": 1,
             "request_queue_size": items,
             "max_inactivity_steps": None,
-            "max_steps": 500,
+            "max_steps": 2000,
             "reward_type": RewardType.INDIVIDUAL,
         },
     )
